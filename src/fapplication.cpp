@@ -63,6 +63,8 @@ along with Fritzing.  If not, see <http://www.gnu.org/licenses/>.
 #include "help/aboutbox.h"
 #include "version/partschecker.h"
 #include "testing/FTesting.h"
+#include "mcp/FMcpServer.h"
+#include "mcp/FMcpWorkspaceAdapter.h"
 
 // dependency injection :P
 #include "referencemodel/sqlitereferencemodel.h"
@@ -450,6 +452,17 @@ int FApplication::init() {
 		}
 
 		if (i + 1 >= m_arguments.length()) continue;
+
+		if ((m_arguments[i].compare("-mcp", Qt::CaseInsensitive) == 0) ||
+		        (m_arguments[i].compare("--mcp-port", Qt::CaseInsensitive) == 0))
+		{
+			bool okPort = false;
+			int parsedPort = m_arguments[i + 1].toInt(&okPort);
+			if (okPort && parsedPort >= 0 && parsedPort <= 65535) {
+				m_mcpPort = parsedPort;
+			}
+			toRemove << i << i + 1;
+		}
 
 		if ((m_arguments[i].compare("-f", Qt::CaseInsensitive) == 0) ||
 		        (m_arguments[i].compare("-folder", Qt::CaseInsensitive) == 0)||
@@ -1480,6 +1493,14 @@ int FApplication::startup()
 
 	loadSomething();
 	m_started = true;
+
+	if (m_mcpPort > 0 && m_mcpServer == nullptr) {
+		m_mcpAdapter = new FMcpWorkspaceAdapter(this);
+		m_mcpServer = new FMcpServer(m_mcpAdapter, this);
+		if (m_mcpServer->start(static_cast<quint16>(m_mcpPort))) {
+			DebugDialog::debug(QString("FMcpServer listening on 127.0.0.1:%1").arg(m_mcpServer->serverPort()));
+		}
+	}
 
 	if (m_progressIndex >= 0) splash.showProgress(m_progressIndex, 0.99);
 	ProcessEventBlocker::processEvents();

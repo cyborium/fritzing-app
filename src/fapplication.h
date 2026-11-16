@@ -241,6 +241,9 @@ protected:
 	QHash<QString, struct LockedFile *> m_lockedFiles;
 	int m_portNumber = 0;
 	FServer * m_fServer = nullptr;
+	int m_mcpPort = 8765;
+	class FMcpWorkspaceAdapter * m_mcpAdapter = nullptr;
+	class FMcpServer * m_mcpServer = nullptr;
 	QString m_buildType;
 	QString m_debugLogFilename;
 };
