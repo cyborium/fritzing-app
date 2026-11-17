@@ -19,6 +19,7 @@ the Free Software Foundation, either version 3 of the License, or
 FMcpCommandRouter::FMcpCommandRouter(IFritzingWorkspace *workspace)
 	: m_workspace(workspace) {
 	registerHandlers();
+	registerStage2Handlers();
 }
 
 void FMcpCommandRouter::registerHandlers() {
@@ -40,6 +41,23 @@ void FMcpCommandRouter::registerHandlers() {
 	m_handlers.insert(QStringLiteral("wire.connect"), [this](const QJsonObject &p) { return handleConnectWire(p); });
 	m_handlers.insert(QStringLiteral("wire.delete"), [this](const QJsonObject &p) { return handleDeleteWire(p); });
 	m_handlers.insert(QStringLiteral("wire.get_netlist"), [this](const QJsonObject &p) { return handleGetNetlist(p); });
+}
+
+void FMcpCommandRouter::registerStage2Handlers() {
+	m_handlers.insert(QStringLiteral("sketch.open"), [this](const QJsonObject &p) { return handleOpenSketch(p); });
+	m_handlers.insert(QStringLiteral("sketch.save"), [this](const QJsonObject &p) { return handleSaveSketch(p); });
+
+	m_handlers.insert(QStringLiteral("pcb.get_board_info"), [this](const QJsonObject &p) { return handleGetPcbBoardInfo(p); });
+	m_handlers.insert(QStringLiteral("pcb.resize_board"), [this](const QJsonObject &p) { return handleResizePcbBoard(p); });
+	m_handlers.insert(QStringLiteral("pcb.set_layers"), [this](const QJsonObject &p) { return handleSetPcbLayers(p); });
+	m_handlers.insert(QStringLiteral("pcb.run_drc"), [this](const QJsonObject &p) { return handleRunDrc(p); });
+	m_handlers.insert(QStringLiteral("pcb.copper_fill"), [this](const QJsonObject &p) { return handleSetPcbCopperFill(p); });
+
+	m_handlers.insert(QStringLiteral("sim.get_spice_netlist"), [this](const QJsonObject &p) { return handleGetSpiceNetlist(p); });
+	m_handlers.insert(QStringLiteral("sim.control"), [this](const QJsonObject &p) { return handleControlSimulation(p); });
+
+	m_handlers.insert(QStringLiteral("export.bom"), [this](const QJsonObject &p) { return handleExportBomCsv(p); });
+	m_handlers.insert(QStringLiteral("export.gerber"), [this](const QJsonObject &p) { return handleExportGerber(p); });
 }
 
 QStringList FMcpCommandRouter::registeredMethods() const {
@@ -199,4 +217,91 @@ QJsonObject FMcpCommandRouter::handleDeleteWire(const QJsonObject &params) const
 QJsonObject FMcpCommandRouter::handleGetNetlist(const QJsonObject &params) const {
 	Q_UNUSED(params);
 	return m_workspace->getNetlist();
+}
+
+QJsonObject FMcpCommandRouter::handleOpenSketch(const QJsonObject &params) const {
+	QString filePath;
+	QString err;
+	if (!FMcpValidator::validateSketchPath(params, filePath, err)) {
+		return FMcpResult::fail(err);
+	}
+	return m_workspace->openSketch(filePath);
+}
+
+QJsonObject FMcpCommandRouter::handleSaveSketch(const QJsonObject &params) const {
+	QString filePath;
+	QString err;
+	if (!FMcpValidator::validateSketchPath(params, filePath, err)) {
+		return FMcpResult::fail(err);
+	}
+	return m_workspace->saveSketch(filePath);
+}
+
+QJsonObject FMcpCommandRouter::handleGetPcbBoardInfo(const QJsonObject &params) const {
+	Q_UNUSED(params);
+	return m_workspace->getPcbBoardInfo();
+}
+
+QJsonObject FMcpCommandRouter::handleResizePcbBoard(const QJsonObject &params) const {
+	FMcpBoardResizeSpec spec;
+	QString err;
+	if (!FMcpValidator::validateBoardResizeParams(params, spec, err)) {
+		return FMcpResult::fail(err);
+	}
+	return m_workspace->resizePcbBoard(spec);
+}
+
+QJsonObject FMcpCommandRouter::handleSetPcbLayers(const QJsonObject &params) const {
+	int layers = 0;
+	QString err;
+	if (!FMcpValidator::validateBoardLayers(params, layers, err)) {
+		return FMcpResult::fail(err);
+	}
+	return m_workspace->setPcbLayers(layers);
+}
+
+QJsonObject FMcpCommandRouter::handleRunDrc(const QJsonObject &params) const {
+	Q_UNUSED(params);
+	return m_workspace->runDesignRulesCheck();
+}
+
+QJsonObject FMcpCommandRouter::handleSetPcbCopperFill(const QJsonObject &params) const {
+	QString mode;
+	QString err;
+	if (!FMcpValidator::validateCopperFillMode(params, mode, err)) {
+		return FMcpResult::fail(err);
+	}
+	return m_workspace->setPcbCopperFill(mode);
+}
+
+QJsonObject FMcpCommandRouter::handleGetSpiceNetlist(const QJsonObject &params) const {
+	Q_UNUSED(params);
+	return m_workspace->getSpiceNetlist();
+}
+
+QJsonObject FMcpCommandRouter::handleControlSimulation(const QJsonObject &params) const {
+	QString action;
+	QString err;
+	if (!FMcpValidator::validateSimControlAction(params, action, err)) {
+		return FMcpResult::fail(err);
+	}
+	return m_workspace->controlSimulation(action);
+}
+
+QJsonObject FMcpCommandRouter::handleExportBomCsv(const QJsonObject &params) const {
+	QString outputPath;
+	QString err;
+	if (!FMcpValidator::optionalString(params, QStringLiteral("outputPath"), QString(), outputPath, err)) {
+		return FMcpResult::fail(err);
+	}
+	return m_workspace->exportBomCsv(outputPath);
+}
+
+QJsonObject FMcpCommandRouter::handleExportGerber(const QJsonObject &params) const {
+	FMcpGerberSpec spec;
+	QString err;
+	if (!FMcpValidator::validateGerberParams(params, spec, err)) {
+		return FMcpResult::fail(err);
+	}
+	return m_workspace->exportGerber(spec);
 }

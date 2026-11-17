@@ -31,12 +31,15 @@ public:
 
 private:
 	void registerHandlers();
+	void registerStage2Handlers();
 
 	QJsonObject handleGetState(const QJsonObject &params) const;
 	QJsonObject handleSetView(const QJsonObject &params) const;
 	QJsonObject handleUndo(const QJsonObject &params) const;
 	QJsonObject handleRedo(const QJsonObject &params) const;
 	QJsonObject handleRenderImage(const QJsonObject &params) const;
+	QJsonObject handleOpenSketch(const QJsonObject &params) const;
+	QJsonObject handleSaveSketch(const QJsonObject &params) const;
 
 	QJsonObject handleSearchParts(const QJsonObject &params) const;
 	QJsonObject handleGetPartInfo(const QJsonObject &params) const;
@@ -50,6 +53,18 @@ private:
 	QJsonObject handleConnectWire(const QJsonObject &params) const;
 	QJsonObject handleDeleteWire(const QJsonObject &params) const;
 	QJsonObject handleGetNetlist(const QJsonObject &params) const;
+
+	QJsonObject handleGetPcbBoardInfo(const QJsonObject &params) const;
+	QJsonObject handleResizePcbBoard(const QJsonObject &params) const;
+	QJsonObject handleSetPcbLayers(const QJsonObject &params) const;
+	QJsonObject handleRunDrc(const QJsonObject &params) const;
+	QJsonObject handleSetPcbCopperFill(const QJsonObject &params) const;
+
+	QJsonObject handleGetSpiceNetlist(const QJsonObject &params) const;
+	QJsonObject handleControlSimulation(const QJsonObject &params) const;
+
+	QJsonObject handleExportBomCsv(const QJsonObject &params) const;
+	QJsonObject handleExportGerber(const QJsonObject &params) const;
 
 	IFritzingWorkspace *m_workspace = nullptr;
 	QHash<QString, HandlerFunc> m_handlers;

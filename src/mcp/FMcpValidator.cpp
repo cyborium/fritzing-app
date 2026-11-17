@@ -224,3 +224,78 @@ bool FMcpValidator::validateRenderParams(const QJsonObject &params, FMcpRenderSp
 	return validateDimensionField(params, QStringLiteral("width"), spec.width, err) &&
 		   validateDimensionField(params, QStringLiteral("height"), spec.height, err);
 }
+
+bool FMcpValidator::validateSketchPath(const QJsonObject &params, QString &filePath, QString &err) {
+	if (!requireNonEmptyString(params, QStringLiteral("filePath"), filePath, err)) {
+		return false;
+	}
+	QString lower = filePath.toLower();
+	if (!lower.endsWith(QStringLiteral(".fz")) && !lower.endsWith(QStringLiteral(".fzz"))) {
+		err = QStringLiteral("Sketch file path must end with '.fz' or '.fzz'");
+		return false;
+	}
+	return true;
+}
+
+bool FMcpValidator::validateBoardResizeParams(const QJsonObject &params, FMcpBoardResizeSpec &spec, QString &err) {
+	if (!optionalString(params, QStringLiteral("board"), QString(), spec.boardRef, err)) {
+		return false;
+	}
+	if (!requireFiniteCoord(params, QStringLiteral("widthMm"), spec.widthMm, err) ||
+		!requireFiniteCoord(params, QStringLiteral("heightMm"), spec.heightMm, err)) {
+		return false;
+	}
+	if (spec.widthMm < MinBoardDimensionMm || spec.widthMm > MaxBoardDimensionMm ||
+		spec.heightMm < MinBoardDimensionMm || spec.heightMm > MaxBoardDimensionMm) {
+		err = QStringLiteral("Board dimensions must be between %1 and %2 mm").arg(MinBoardDimensionMm).arg(MaxBoardDimensionMm);
+		return false;
+	}
+	return true;
+}
+
+bool FMcpValidator::validateBoardLayers(const QJsonObject &params, int &layers, QString &err) {
+	if (!params.contains(QStringLiteral("layers")) || !params.value(QStringLiteral("layers")).isDouble()) {
+		err = QStringLiteral("Parameter 'layers' must be 1 or 2");
+		return false;
+	}
+	double raw = params.value(QStringLiteral("layers")).toDouble(-1.0);
+	if (raw != 1.0 && raw != 2.0) {
+		err = QStringLiteral("Parameter 'layers' must be 1 or 2");
+		return false;
+	}
+	layers = static_cast<int>(raw);
+	return true;
+}
+
+bool FMcpValidator::validateCopperFillMode(const QJsonObject &params, QString &mode, QString &err) {
+	QString raw;
+	if (!requireNonEmptyString(params, QStringLiteral("mode"), raw, err)) {
+		return false;
+	}
+	mode = raw.toLower();
+	if (mode != QStringLiteral("ground") && mode != QStringLiteral("copper") && mode != QStringLiteral("remove")) {
+		err = QStringLiteral("Invalid mode '%1' (expected 'ground', 'copper', or 'remove')").arg(raw);
+		return false;
+	}
+	return true;
+}
+
+bool FMcpValidator::validateSimControlAction(const QJsonObject &params, QString &action, QString &err) {
+	QString raw;
+	if (!requireNonEmptyString(params, QStringLiteral("action"), raw, err)) {
+		return false;
+	}
+	action = raw.toLower();
+	if (action != QStringLiteral("start") && action != QStringLiteral("stop") && action != QStringLiteral("status")) {
+		err = QStringLiteral("Invalid action '%1' (expected 'start', 'stop', or 'status')").arg(raw);
+		return false;
+	}
+	return true;
+}
+
+bool FMcpValidator::validateGerberParams(const QJsonObject &params, FMcpGerberSpec &spec, QString &err) {
+	if (!requireNonEmptyString(params, QStringLiteral("outputDir"), spec.outputDir, err)) {
+		return false;
+	}
+	return optionalString(params, QStringLiteral("prefix"), QString(), spec.prefix, err);
+}

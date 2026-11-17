@@ -18,6 +18,8 @@ the Free Software Foundation, either version 3 of the License, or
 class FMcpValidator {
 public:
 	static constexpr double MaxCoordinateAbs = 100000.0;
+	static constexpr double MinBoardDimensionMm = 5.0;
+	static constexpr double MaxBoardDimensionMm = 1000.0;
 	static constexpr int MaxSearchLimit = 500;
 	static constexpr int MaxRenderDimension = 8192;
 	static constexpr int MinRenderDimension = 64;
@@ -36,6 +38,13 @@ public:
 	static bool validateWireConnectParams(const QJsonObject &params, FMcpWireSpec &spec, QString &err);
 	static bool validateWireDeleteParams(const QJsonObject &params, long &wireId, QString &err);
 	static bool validateRenderParams(const QJsonObject &params, FMcpRenderSpec &spec, QString &err);
+
+	static bool validateSketchPath(const QJsonObject &params, QString &filePath, QString &err);
+	static bool validateBoardResizeParams(const QJsonObject &params, FMcpBoardResizeSpec &spec, QString &err);
+	static bool validateBoardLayers(const QJsonObject &params, int &layers, QString &err);
+	static bool validateCopperFillMode(const QJsonObject &params, QString &mode, QString &err);
+	static bool validateSimControlAction(const QJsonObject &params, QString &action, QString &err);
+	static bool validateGerberParams(const QJsonObject &params, FMcpGerberSpec &spec, QString &err);
 };
 
 #endif // FMCPVALIDATOR_H

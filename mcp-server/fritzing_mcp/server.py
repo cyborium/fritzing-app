@@ -204,6 +204,85 @@ def get_netlist() -> dict[str, Any]:
     return _bridge.call("wire.get_netlist")
 
 
+@mcp.tool()
+def open_sketch(file_path: str) -> dict[str, Any]:
+    """Open an existing Fritzing sketch (.fz or .fzz) from disk."""
+    return _bridge.call("sketch.open", {"filePath": str(Path(file_path.strip()))})
+
+
+@mcp.tool()
+def save_sketch(file_path: str) -> dict[str, Any]:
+    """Save the active Fritzing sketch to disk (.fzz archive or .fz file)."""
+    return _bridge.call("sketch.save", {"filePath": str(Path(file_path.strip()))})
+
+
+@mcp.tool()
+def get_pcb_board_info() -> dict[str, Any]:
+    """Retrieve all PCB boards in the sketch along with dimensions (mm) and layer count."""
+    return _bridge.call("pcb.get_board_info")
+
+
+@mcp.tool()
+def resize_pcb_board(
+    width_mm: float,
+    height_mm: float,
+    board: str = "",
+) -> dict[str, Any]:
+    """Resize a rectangular PCB board in millimeters (5.0 to 1000.0 mm)."""
+    params: dict[str, Any] = {"widthMm": width_mm, "heightMm": height_mm}
+    if board.strip():
+        params["board"] = board.strip()
+    return _bridge.call("pcb.resize_board", params)
+
+
+@mcp.tool()
+def set_pcb_layers(layers: int) -> dict[str, Any]:
+    """Switch the PCB board between single-layer (1) and double-layer (2)."""
+    return _bridge.call("pcb.set_layers", {"layers": layers})
+
+
+@mcp.tool()
+def run_design_rules_check() -> dict[str, Any]:
+    """Run the PCB Design Rules Check (DRC) and return any overlapping/clearance collisions."""
+    return _bridge.call("pcb.run_drc")
+
+
+@mcp.tool()
+def set_pcb_copper_fill(mode: str = "ground") -> dict[str, Any]:
+    """Generate or remove PCB copper/ground pour ('ground', 'copper', or 'remove')."""
+    return _bridge.call("pcb.copper_fill", {"mode": mode.strip().lower()})
+
+
+@mcp.tool()
+def get_spice_netlist() -> dict[str, Any]:
+    """Generate the SPICE netlist for circuit simulation of the current sketch."""
+    return _bridge.call("sim.get_spice_netlist")
+
+
+@mcp.tool()
+def control_simulation(action: str = "start") -> dict[str, Any]:
+    """Control the built-in ngspice circuit simulator ('start', 'stop', or 'status')."""
+    return _bridge.call("sim.control", {"action": action.strip().lower()})
+
+
+@mcp.tool()
+def export_bom_csv(output_path: str = "") -> dict[str, Any]:
+    """Export the Bill of Materials (BOM) as structured JSON rows and optional CSV file."""
+    params: dict[str, Any] = {}
+    if output_path.strip():
+        params["outputPath"] = str(Path(output_path.strip()))
+    return _bridge.call("export.bom", params)
+
+
+@mcp.tool()
+def export_gerber(output_dir: str, prefix: str = "") -> dict[str, Any]:
+    """Export RS-274X Gerber and Excellon drill files for PCB manufacturing."""
+    params: dict[str, Any] = {"outputDir": str(Path(output_dir.strip()))}
+    if prefix.strip():
+        params["prefix"] = prefix.strip()
+    return _bridge.call("export.gerber", params)
+
+
 def main() -> None:  # pragma: no cover
     """Run the Fritzing MCP server over stdio."""
     mcp.run(transport="stdio")

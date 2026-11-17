@@ -51,6 +51,21 @@ public:
 	QJsonObject deleteWire(long wireId) override;
 	QJsonObject getNetlist() override;
 
+	QJsonObject openSketch(const QString &filePath) override;
+	QJsonObject saveSketch(const QString &filePath) override;
+
+	QJsonObject getPcbBoardInfo() override;
+	QJsonObject resizePcbBoard(const FMcpBoardResizeSpec &spec) override;
+	QJsonObject setPcbLayers(int layers) override;
+	QJsonObject runDesignRulesCheck() override;
+	QJsonObject setPcbCopperFill(const QString &mode) override;
+
+	QJsonObject getSpiceNetlist() override;
+	QJsonObject controlSimulation(const QString &action) override;
+
+	QJsonObject exportBomCsv(const QString &outputPath) override;
+	QJsonObject exportGerber(const FMcpGerberSpec &spec) override;
+
 private:
 	MainWindow *currentMainWindow() const;
 	SketchWidget *resolveView(MainWindow *mw, const QString &viewName) const;

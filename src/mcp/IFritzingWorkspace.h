@@ -37,6 +37,21 @@ public:
 	virtual QJsonObject connectWire(const FMcpWireSpec &spec) = 0;
 	virtual QJsonObject deleteWire(long wireId) = 0;
 	virtual QJsonObject getNetlist() = 0;
+
+	virtual QJsonObject openSketch(const QString &filePath) = 0;
+	virtual QJsonObject saveSketch(const QString &filePath) = 0;
+
+	virtual QJsonObject getPcbBoardInfo() = 0;
+	virtual QJsonObject resizePcbBoard(const FMcpBoardResizeSpec &spec) = 0;
+	virtual QJsonObject setPcbLayers(int layers) = 0;
+	virtual QJsonObject runDesignRulesCheck() = 0;
+	virtual QJsonObject setPcbCopperFill(const QString &mode) = 0;
+
+	virtual QJsonObject getSpiceNetlist() = 0;
+	virtual QJsonObject controlSimulation(const QString &action) = 0;
+
+	virtual QJsonObject exportBomCsv(const QString &outputPath) = 0;
+	virtual QJsonObject exportGerber(const FMcpGerberSpec &spec) = 0;
 };
 
 #endif // IFRITZINGWORKSPACE_H

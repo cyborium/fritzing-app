@@ -17,15 +17,20 @@ the Free Software Foundation, either version 3 of the License, or
 #include "../connectors/connectoritem.h"
 #include "../fapplication.h"
 #include "../items/itembase.h"
+#include "../items/resizableboard.h"
 #include "../items/wire.h"
 #include "../mainwindow/mainwindow.h"
 #include "../model/modelpart.h"
 #include "../referencemodel/referencemodel.h"
+#include "../sketch/pcbsketchwidget.h"
 #include "../sketch/sketchwidget.h"
+#include "../svg/gerbergenerator.h"
 #include "../waitpushundostack.h"
 
 #include <QBuffer>
+#include <QDir>
 #include <QFile>
+#include <QFileInfo>
 #include <QImage>
 #include <QPainter>
 #include <cmath>
@@ -733,5 +738,268 @@ QJsonObject FMcpWorkspaceAdapter::getNetlist() {
 	QJsonObject data;
 	data[QStringLiteral("netCount")] = netsArr.size();
 	data[QStringLiteral("nets")] = netsArr;
+	return FMcpResult::ok(data);
+}
+
+QJsonObject FMcpWorkspaceAdapter::openSketch(const QString &filePath) {
+	MainWindow *mw = currentMainWindow();
+	if (!mw) {
+		return FMcpResult::fail(QStringLiteral("No active sketch window"), QStringLiteral("NO_ACTIVE_SKETCH"));
+	}
+	QFileInfo fi(filePath);
+	if (!fi.exists() || !fi.isFile()) {
+		return FMcpResult::fail(QStringLiteral("Sketch file '%1' does not exist").arg(filePath), QStringLiteral("FILE_NOT_FOUND"));
+	}
+	QString absPath = fi.absoluteFilePath();
+	if (!mw->loadWhich(absPath, false, false, false, QString())) {
+		return FMcpResult::fail(QStringLiteral("Failed to load sketch '%1'").arg(absPath), QStringLiteral("LOAD_FAILED"));
+	}
+	QJsonObject data;
+	data[QStringLiteral("filePath")] = absPath;
+	return FMcpResult::ok(data);
+}
+
+QJsonObject FMcpWorkspaceAdapter::saveSketch(const QString &filePath) {
+	MainWindow *mw = currentMainWindow();
+	if (!mw) {
+		return FMcpResult::fail(QStringLiteral("No active sketch window"), QStringLiteral("NO_ACTIVE_SKETCH"));
+	}
+	QFileInfo fi(filePath);
+	QDir parentDir = fi.dir();
+	if (!parentDir.exists() && !parentDir.mkpath(QStringLiteral("."))) {
+		return FMcpResult::fail(QStringLiteral("Cannot create directory '%1'").arg(parentDir.absolutePath()), QStringLiteral("IO_ERROR"));
+	}
+	QString absPath = fi.absoluteFilePath();
+	if (!mw->saveAsAux(absPath)) {
+		return FMcpResult::fail(QStringLiteral("Failed to save sketch to '%1'").arg(absPath), QStringLiteral("SAVE_FAILED"));
+	}
+	QJsonObject data;
+	data[QStringLiteral("filePath")] = absPath;
+	return FMcpResult::ok(data);
+}
+
+static ItemBase *resolveSinglePcbBoard(PCBSketchWidget *pcbView, const QString &boardRef, QString &err) {
+	QList<ItemBase *> boards = pcbView->findBoard();
+	if (boards.isEmpty()) {
+		err = QStringLiteral("No PCB board found in sketch");
+		return nullptr;
+	}
+	if (boardRef.isEmpty()) {
+		return boards.first();
+	}
+	for (ItemBase *b : boards) {
+		if (QString::number(b->id()) == boardRef || b->instanceTitle().compare(boardRef, Qt::CaseInsensitive) == 0) {
+			return b;
+		}
+	}
+	err = QStringLiteral("Board '%1' not found in PCB view").arg(boardRef);
+	return nullptr;
+}
+
+QJsonObject FMcpWorkspaceAdapter::getPcbBoardInfo() {
+	MainWindow *mw = currentMainWindow();
+	PCBSketchWidget *pcbView = mw ? mw->pcbView() : nullptr;
+	if (!pcbView) {
+		return FMcpResult::fail(QStringLiteral("No active PCB view"), QStringLiteral("NO_ACTIVE_SKETCH"));
+	}
+
+	int boardCount = 0;
+	double widthMm = 0.0;
+	double heightMm = 0.0;
+	QString boardTitle;
+	pcbView->calcBoardDimensions(boardCount, widthMm, heightMm, boardTitle);
+
+	QJsonArray boardsArr;
+	for (ItemBase *b : pcbView->findBoard()) {
+		QJsonObject bObj = serializePart(b);
+		bObj[QStringLiteral("resizable")] = (qobject_cast<ResizableBoard *>(b) != nullptr);
+		boardsArr.append(bObj);
+	}
+
+	QJsonObject data;
+	data[QStringLiteral("boardCount")] = boardCount;
+	data[QStringLiteral("layers")] = pcbView->boardLayers();
+	data[QStringLiteral("widthMm")] = widthMm;
+	data[QStringLiteral("heightMm")] = heightMm;
+	data[QStringLiteral("boardTitle")] = boardTitle;
+	data[QStringLiteral("boards")] = boardsArr;
+	return FMcpResult::ok(data);
+}
+
+QJsonObject FMcpWorkspaceAdapter::resizePcbBoard(const FMcpBoardResizeSpec &spec) {
+	MainWindow *mw = currentMainWindow();
+	PCBSketchWidget *pcbView = mw ? mw->pcbView() : nullptr;
+	if (!pcbView) {
+		return FMcpResult::fail(QStringLiteral("No active PCB view"), QStringLiteral("NO_ACTIVE_SKETCH"));
+	}
+
+	QString err;
+	ItemBase *board = resolveSinglePcbBoard(pcbView, spec.boardRef, err);
+	if (!board) {
+		return FMcpResult::fail(err, QStringLiteral("BOARD_NOT_FOUND"));
+	}
+	auto *resBoard = qobject_cast<ResizableBoard *>(board);
+	if (!resBoard) {
+		return FMcpResult::fail(QStringLiteral("Board '%1' is not resizable").arg(board->instanceTitle()), QStringLiteral("NOT_RESIZABLE"));
+	}
+
+	QSizeF oldSize = resBoard->getSizeMM();
+	auto *parentCmd = new QUndoCommand(QObject::tr("Resize board to %1x%2 mm").arg(spec.widthMm).arg(spec.heightMm));
+	new ResizeBoardCommand(pcbView, resBoard->id(), oldSize.width(), oldSize.height(), spec.widthMm, spec.heightMm, parentCmd);
+	pcbView->undoStack()->push(parentCmd);
+
+	QJsonObject data;
+	data[QStringLiteral("boardId")] = static_cast<qint64>(resBoard->id());
+	data[QStringLiteral("widthMm")] = spec.widthMm;
+	data[QStringLiteral("heightMm")] = spec.heightMm;
+	return FMcpResult::ok(data);
+}
+
+QJsonObject FMcpWorkspaceAdapter::setPcbLayers(int layers) {
+	MainWindow *mw = currentMainWindow();
+	PCBSketchWidget *pcbView = mw ? mw->pcbView() : nullptr;
+	if (!pcbView) {
+		return FMcpResult::fail(QStringLiteral("No active PCB view"), QStringLiteral("NO_ACTIVE_SKETCH"));
+	}
+	if (pcbView->findBoard().isEmpty()) {
+		return FMcpResult::fail(QStringLiteral("No PCB board found in sketch"), QStringLiteral("BOARD_NOT_FOUND"));
+	}
+	mw->changeBoardLayers(layers, true);
+	QJsonObject data;
+	data[QStringLiteral("layers")] = pcbView->boardLayers();
+	return FMcpResult::ok(data);
+}
+
+QJsonObject FMcpWorkspaceAdapter::runDesignRulesCheck() {
+	MainWindow *mw = currentMainWindow();
+	PCBSketchWidget *pcbView = mw ? mw->pcbView() : nullptr;
+	if (!pcbView) {
+		return FMcpResult::fail(QStringLiteral("No active PCB view"), QStringLiteral("NO_ACTIVE_SKETCH"));
+	}
+	if (pcbView->findBoard().isEmpty()) {
+		return FMcpResult::fail(QStringLiteral("No PCB board found in sketch"), QStringLiteral("BOARD_NOT_FOUND"));
+	}
+
+	mw->setCurrentView(ViewLayer::PCBView);
+	QStringList messages = mw->newDesignRulesCheck(false);
+	QJsonObject data;
+	data[QStringLiteral("passed")] = messages.isEmpty();
+	data[QStringLiteral("violationCount")] = messages.size();
+	data[QStringLiteral("violations")] = QJsonArray::fromStringList(messages);
+	return FMcpResult::ok(data);
+}
+
+QJsonObject FMcpWorkspaceAdapter::setPcbCopperFill(const QString &mode) {
+	MainWindow *mw = currentMainWindow();
+	PCBSketchWidget *pcbView = mw ? mw->pcbView() : nullptr;
+	if (!pcbView) {
+		return FMcpResult::fail(QStringLiteral("No active PCB view"), QStringLiteral("NO_ACTIVE_SKETCH"));
+	}
+	if (pcbView->findBoard().isEmpty()) {
+		return FMcpResult::fail(QStringLiteral("No PCB board found in sketch"), QStringLiteral("BOARD_NOT_FOUND"));
+	}
+
+	mw->setCurrentView(ViewLayer::PCBView);
+	if (mode == QStringLiteral("remove")) {
+		mw->removeGroundFill();
+	} else if (mode == QStringLiteral("ground")) {
+		mw->groundFill();
+	} else {
+		mw->copperFill();
+	}
+
+	QJsonObject data;
+	data[QStringLiteral("mode")] = mode;
+	return FMcpResult::ok(data);
+}
+
+static QString generateCurrentSpiceNetlist(MainWindow *mw) {
+	QList<QList<ConnectorItem *> *> netList;
+	QSet<ItemBase *> itemBases;
+	QString netlist = mw->getSpiceNetlist(QStringLiteral("mcp_spice"), netList, itemBases);
+	for (QList<ConnectorItem *> *net : netList) {
+		delete net;
+	}
+	return netlist;
+}
+
+QJsonObject FMcpWorkspaceAdapter::getSpiceNetlist() {
+	MainWindow *mw = currentMainWindow();
+	if (!mw) {
+		return FMcpResult::fail(QStringLiteral("No active sketch window"), QStringLiteral("NO_ACTIVE_SKETCH"));
+	}
+	QJsonObject data;
+	data[QStringLiteral("netlist")] = generateCurrentSpiceNetlist(mw);
+	return FMcpResult::ok(data);
+}
+
+QJsonObject FMcpWorkspaceAdapter::controlSimulation(const QString &action) {
+	MainWindow *mw = currentMainWindow();
+	if (!mw) {
+		return FMcpResult::fail(QStringLiteral("No active sketch window"), QStringLiteral("NO_ACTIVE_SKETCH"));
+	}
+	if (action == QStringLiteral("start")) {
+		mw->enableSimulator(true);
+		mw->triggerSimulator();
+	} else if (action == QStringLiteral("stop")) {
+		mw->enableSimulator(false);
+	}
+	QJsonObject data;
+	data[QStringLiteral("action")] = action;
+	data[QStringLiteral("enabled")] = mw->isSimulatorEnabled();
+	data[QStringLiteral("netlist")] = generateCurrentSpiceNetlist(mw);
+	return FMcpResult::ok(data);
+}
+
+QJsonObject FMcpWorkspaceAdapter::exportBomCsv(const QString &outputPath) {
+	MainWindow *mw = currentMainWindow();
+	if (!mw) {
+		return FMcpResult::fail(QStringLiteral("No active sketch window"), QStringLiteral("NO_ACTIVE_SKETCH"));
+	}
+	QString csv = mw->getExportBOM_CSV();
+	if (!outputPath.isEmpty()) {
+		QFile outFile(outputPath);
+		if (!outFile.open(QIODevice::WriteOnly | QIODevice::Text)) {
+			return FMcpResult::fail(QStringLiteral("Cannot write BOM file '%1'").arg(outputPath), QStringLiteral("IO_ERROR"));
+		}
+		outFile.write(csv.toUtf8());
+		outFile.close();
+	}
+	QJsonObject data;
+	data[QStringLiteral("csv")] = csv;
+	if (!outputPath.isEmpty()) {
+		data[QStringLiteral("outputPath")] = QFileInfo(outputPath).absoluteFilePath();
+	}
+	return FMcpResult::ok(data);
+}
+
+QJsonObject FMcpWorkspaceAdapter::exportGerber(const FMcpGerberSpec &spec) {
+	MainWindow *mw = currentMainWindow();
+	PCBSketchWidget *pcbView = mw ? mw->pcbView() : nullptr;
+	if (!pcbView) {
+		return FMcpResult::fail(QStringLiteral("No active PCB view"), QStringLiteral("NO_ACTIVE_SKETCH"));
+	}
+
+	QString err;
+	ItemBase *board = resolveSinglePcbBoard(pcbView, QString(), err);
+	if (!board) {
+		return FMcpResult::fail(err, QStringLiteral("BOARD_NOT_FOUND"));
+	}
+
+	QDir dir(spec.outputDir);
+	if (!dir.exists() && !dir.mkpath(QStringLiteral("."))) {
+		return FMcpResult::fail(QStringLiteral("Cannot create output directory '%1'").arg(spec.outputDir), QStringLiteral("IO_ERROR"));
+	}
+
+	QString absDir = dir.absolutePath();
+	QString prefix = spec.prefix.isEmpty() ? QStringLiteral("fritzing_pcb") : spec.prefix;
+	GerberGenerator::exportToGerber(prefix, absDir, board, pcbView, false);
+
+	QStringList files = dir.entryList({prefix + QStringLiteral("*")}, QDir::Files, QDir::Name);
+	QJsonObject data;
+	data[QStringLiteral("outputDir")] = absDir;
+	data[QStringLiteral("prefix")] = prefix;
+	data[QStringLiteral("files")] = QJsonArray::fromStringList(files);
+	data[QStringLiteral("fileCount")] = files.size();
 	return FMcpResult::ok(data);
 }

@@ -82,6 +82,50 @@ public:
 		lastCall = QStringLiteral("getNetlist");
 		return nextResponse;
 	}
+	QJsonObject openSketch(const QString &filePath) override {
+		lastCall = QStringLiteral("openSketch:") + filePath;
+		return nextResponse;
+	}
+	QJsonObject saveSketch(const QString &filePath) override {
+		lastCall = QStringLiteral("saveSketch:") + filePath;
+		return nextResponse;
+	}
+	QJsonObject getPcbBoardInfo() override {
+		lastCall = QStringLiteral("getPcbBoardInfo");
+		return nextResponse;
+	}
+	QJsonObject resizePcbBoard(const FMcpBoardResizeSpec &spec) override {
+		lastCall = QStringLiteral("resizePcbBoard:%1:%2x%3").arg(spec.boardRef).arg(spec.widthMm).arg(spec.heightMm);
+		return nextResponse;
+	}
+	QJsonObject setPcbLayers(int layers) override {
+		lastCall = QStringLiteral("setPcbLayers:%1").arg(layers);
+		return nextResponse;
+	}
+	QJsonObject runDesignRulesCheck() override {
+		lastCall = QStringLiteral("runDesignRulesCheck");
+		return nextResponse;
+	}
+	QJsonObject setPcbCopperFill(const QString &mode) override {
+		lastCall = QStringLiteral("setPcbCopperFill:") + mode;
+		return nextResponse;
+	}
+	QJsonObject getSpiceNetlist() override {
+		lastCall = QStringLiteral("getSpiceNetlist");
+		return nextResponse;
+	}
+	QJsonObject controlSimulation(const QString &action) override {
+		lastCall = QStringLiteral("controlSimulation:") + action;
+		return nextResponse;
+	}
+	QJsonObject exportBomCsv(const QString &outputPath) override {
+		lastCall = QStringLiteral("exportBomCsv:") + outputPath;
+		return nextResponse;
+	}
+	QJsonObject exportGerber(const FMcpGerberSpec &spec) override {
+		lastCall = QStringLiteral("exportGerber:%1:%2").arg(spec.outputDir, spec.prefix);
+		return nextResponse;
+	}
 };
 
 class TestMcp : public QObject {
@@ -95,8 +139,11 @@ private Q_SLOTS:
 	void testValidatorViewsAndRotation();
 	void testValidatorSearchAndPartSpecs();
 	void testValidatorWireAndRenderSpecs();
+	void testValidatorStage2Specs();
 	void testRouterDispatchAllMethods();
+	void testRouterDispatchStage2Methods();
 	void testRouterValidationAndErrorPaths();
+	void testRouterStage2ValidationErrors();
 	void testServerHttpRouting();
 	void testServerLiveTcpSocket();
 };
@@ -317,10 +364,50 @@ void TestMcp::testValidatorWireAndRenderSpecs() {
 	QVERIFY(FMcpValidator::validateRenderParams({{QStringLiteral("format"), QStringLiteral("svg")}, {QStringLiteral("width"), 800}, {QStringLiteral("height"), 600}}, rSpec, err));
 }
 
+void TestMcp::testValidatorStage2Specs() {
+	QString err;
+	QString path;
+	QVERIFY(!FMcpValidator::validateSketchPath(QJsonObject(), path, err));
+	QVERIFY(!FMcpValidator::validateSketchPath({{QStringLiteral("filePath"), QStringLiteral("bad.txt")}}, path, err));
+	QVERIFY(FMcpValidator::validateSketchPath({{QStringLiteral("filePath"), QStringLiteral("circuit.fzz")}}, path, err));
+	QVERIFY(FMcpValidator::validateSketchPath({{QStringLiteral("filePath"), QStringLiteral("circuit.FZ")}}, path, err));
+
+	FMcpBoardResizeSpec bSpec;
+	QVERIFY(!FMcpValidator::validateBoardResizeParams(QJsonObject(), bSpec, err));
+	QVERIFY(!FMcpValidator::validateBoardResizeParams({{QStringLiteral("widthMm"), 2.0}, {QStringLiteral("heightMm"), 50.0}}, bSpec, err));
+	QVERIFY(!FMcpValidator::validateBoardResizeParams({{QStringLiteral("widthMm"), 50.0}, {QStringLiteral("heightMm"), 2000.0}}, bSpec, err));
+	QVERIFY(!FMcpValidator::validateBoardResizeParams({{QStringLiteral("widthMm"), 50.0}, {QStringLiteral("heightMm"), 40.0}, {QStringLiteral("board"), 123}}, bSpec, err));
+	QVERIFY(FMcpValidator::validateBoardResizeParams({{QStringLiteral("widthMm"), 80.0}, {QStringLiteral("heightMm"), 50.0}, {QStringLiteral("board"), QStringLiteral("PCB1")}}, bSpec, err));
+
+	int layers = 0;
+	QVERIFY(!FMcpValidator::validateBoardLayers(QJsonObject(), layers, err));
+	QVERIFY(!FMcpValidator::validateBoardLayers({{QStringLiteral("layers"), 3}}, layers, err));
+	QVERIFY(FMcpValidator::validateBoardLayers({{QStringLiteral("layers"), 2}}, layers, err));
+
+	QString mode;
+	QVERIFY(!FMcpValidator::validateCopperFillMode(QJsonObject(), mode, err));
+	QVERIFY(!FMcpValidator::validateCopperFillMode({{QStringLiteral("mode"), QStringLiteral("invalid")}}, mode, err));
+	QVERIFY(FMcpValidator::validateCopperFillMode({{QStringLiteral("mode"), QStringLiteral("ground")}}, mode, err));
+	QVERIFY(FMcpValidator::validateCopperFillMode({{QStringLiteral("mode"), QStringLiteral("copper")}}, mode, err));
+	QVERIFY(FMcpValidator::validateCopperFillMode({{QStringLiteral("mode"), QStringLiteral("remove")}}, mode, err));
+
+	QString action;
+	QVERIFY(!FMcpValidator::validateSimControlAction(QJsonObject(), action, err));
+	QVERIFY(!FMcpValidator::validateSimControlAction({{QStringLiteral("action"), QStringLiteral("pause")}}, action, err));
+	QVERIFY(FMcpValidator::validateSimControlAction({{QStringLiteral("action"), QStringLiteral("start")}}, action, err));
+	QVERIFY(FMcpValidator::validateSimControlAction({{QStringLiteral("action"), QStringLiteral("stop")}}, action, err));
+	QVERIFY(FMcpValidator::validateSimControlAction({{QStringLiteral("action"), QStringLiteral("status")}}, action, err));
+
+	FMcpGerberSpec gSpec;
+	QVERIFY(!FMcpValidator::validateGerberParams(QJsonObject(), gSpec, err));
+	QVERIFY(!FMcpValidator::validateGerberParams({{QStringLiteral("outputDir"), QStringLiteral("/tmp")}, {QStringLiteral("prefix"), 123}}, gSpec, err));
+	QVERIFY(FMcpValidator::validateGerberParams({{QStringLiteral("outputDir"), QStringLiteral("/tmp/gerber")}, {QStringLiteral("prefix"), QStringLiteral("board")}}, gSpec, err));
+}
+
 void TestMcp::testRouterDispatchAllMethods() {
 	FakeWorkspace ws;
 	FMcpCommandRouter router(&ws);
-	QCOMPARE(router.registeredMethods().size(), 15);
+	QCOMPARE(router.registeredMethods().size(), 26);
 
 	QVERIFY(router.dispatch(QStringLiteral("sketch.get_state"), {{QStringLiteral("view"), QStringLiteral("pcb")}}).value(QStringLiteral("ok")).toBool());
 	QCOMPARE(ws.lastCall, QStringLiteral("getSketchState:pcb"));
@@ -368,6 +455,44 @@ void TestMcp::testRouterDispatchAllMethods() {
 	QCOMPARE(ws.lastCall, QStringLiteral("getNetlist"));
 }
 
+void TestMcp::testRouterDispatchStage2Methods() {
+	FakeWorkspace ws;
+	FMcpCommandRouter router(&ws);
+
+	QVERIFY(router.dispatch(QStringLiteral("sketch.open"), {{QStringLiteral("filePath"), QStringLiteral("test.fzz")}}).value(QStringLiteral("ok")).toBool());
+	QCOMPARE(ws.lastCall, QStringLiteral("openSketch:test.fzz"));
+
+	QVERIFY(router.dispatch(QStringLiteral("sketch.save"), {{QStringLiteral("filePath"), QStringLiteral("out.fzz")}}).value(QStringLiteral("ok")).toBool());
+	QCOMPARE(ws.lastCall, QStringLiteral("saveSketch:out.fzz"));
+
+	QVERIFY(router.dispatch(QStringLiteral("pcb.get_board_info"), QJsonObject()).value(QStringLiteral("ok")).toBool());
+	QCOMPARE(ws.lastCall, QStringLiteral("getPcbBoardInfo"));
+
+	QVERIFY(router.dispatch(QStringLiteral("pcb.resize_board"), {{QStringLiteral("widthMm"), 60.0}, {QStringLiteral("heightMm"), 40.0}, {QStringLiteral("board"), QStringLiteral("PCB1")}}).value(QStringLiteral("ok")).toBool());
+	QCOMPARE(ws.lastCall, QStringLiteral("resizePcbBoard:PCB1:60x40"));
+
+	QVERIFY(router.dispatch(QStringLiteral("pcb.set_layers"), {{QStringLiteral("layers"), 1}}).value(QStringLiteral("ok")).toBool());
+	QCOMPARE(ws.lastCall, QStringLiteral("setPcbLayers:1"));
+
+	QVERIFY(router.dispatch(QStringLiteral("pcb.run_drc"), QJsonObject()).value(QStringLiteral("ok")).toBool());
+	QCOMPARE(ws.lastCall, QStringLiteral("runDesignRulesCheck"));
+
+	QVERIFY(router.dispatch(QStringLiteral("pcb.copper_fill"), {{QStringLiteral("mode"), QStringLiteral("ground")}}).value(QStringLiteral("ok")).toBool());
+	QCOMPARE(ws.lastCall, QStringLiteral("setPcbCopperFill:ground"));
+
+	QVERIFY(router.dispatch(QStringLiteral("sim.get_spice_netlist"), QJsonObject()).value(QStringLiteral("ok")).toBool());
+	QCOMPARE(ws.lastCall, QStringLiteral("getSpiceNetlist"));
+
+	QVERIFY(router.dispatch(QStringLiteral("sim.control"), {{QStringLiteral("action"), QStringLiteral("start")}}).value(QStringLiteral("ok")).toBool());
+	QCOMPARE(ws.lastCall, QStringLiteral("controlSimulation:start"));
+
+	QVERIFY(router.dispatch(QStringLiteral("export.bom"), {{QStringLiteral("outputPath"), QStringLiteral("bom.csv")}}).value(QStringLiteral("ok")).toBool());
+	QCOMPARE(ws.lastCall, QStringLiteral("exportBomCsv:bom.csv"));
+
+	QVERIFY(router.dispatch(QStringLiteral("export.gerber"), {{QStringLiteral("outputDir"), QStringLiteral("gerber_out")}, {QStringLiteral("prefix"), QStringLiteral("v1")}}).value(QStringLiteral("ok")).toBool());
+	QCOMPARE(ws.lastCall, QStringLiteral("exportGerber:gerber_out:v1"));
+}
+
 void TestMcp::testRouterValidationAndErrorPaths() {
 	FMcpCommandRouter nullRouter(nullptr);
 	QCOMPARE(nullRouter.dispatch(QStringLiteral("sketch.undo"), QJsonObject()).value(QStringLiteral("code")).toString(), QStringLiteral("WORKSPACE_UNAVAILABLE"));
@@ -389,6 +514,20 @@ void TestMcp::testRouterValidationAndErrorPaths() {
 	QVERIFY(!router.dispatch(QStringLiteral("part.set_property"), QJsonObject()).value(QStringLiteral("ok")).toBool());
 	QVERIFY(!router.dispatch(QStringLiteral("wire.connect"), QJsonObject()).value(QStringLiteral("ok")).toBool());
 	QVERIFY(!router.dispatch(QStringLiteral("wire.delete"), QJsonObject()).value(QStringLiteral("ok")).toBool());
+}
+
+void TestMcp::testRouterStage2ValidationErrors() {
+	FakeWorkspace ws;
+	FMcpCommandRouter router(&ws);
+
+	QVERIFY(!router.dispatch(QStringLiteral("sketch.open"), QJsonObject()).value(QStringLiteral("ok")).toBool());
+	QVERIFY(!router.dispatch(QStringLiteral("sketch.save"), {{QStringLiteral("filePath"), QStringLiteral("bad.png")}}).value(QStringLiteral("ok")).toBool());
+	QVERIFY(!router.dispatch(QStringLiteral("pcb.resize_board"), QJsonObject()).value(QStringLiteral("ok")).toBool());
+	QVERIFY(!router.dispatch(QStringLiteral("pcb.set_layers"), {{QStringLiteral("layers"), 4}}).value(QStringLiteral("ok")).toBool());
+	QVERIFY(!router.dispatch(QStringLiteral("pcb.copper_fill"), {{QStringLiteral("mode"), QStringLiteral("bad")}}).value(QStringLiteral("ok")).toBool());
+	QVERIFY(!router.dispatch(QStringLiteral("sim.control"), {{QStringLiteral("action"), QStringLiteral("bad")}}).value(QStringLiteral("ok")).toBool());
+	QVERIFY(!router.dispatch(QStringLiteral("export.bom"), {{QStringLiteral("outputPath"), 123}}).value(QStringLiteral("ok")).toBool());
+	QVERIFY(!router.dispatch(QStringLiteral("export.gerber"), QJsonObject()).value(QStringLiteral("ok")).toBool());
 }
 
 void TestMcp::testServerHttpRouting() {

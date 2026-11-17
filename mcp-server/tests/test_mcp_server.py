@@ -368,3 +368,61 @@ def test_server_part_and_wire_tools(sample_parts_db: Path) -> None:
 
     mcp_server.get_netlist()
     mock_bridge.call.assert_called_with("wire.get_netlist")
+
+
+def test_server_stage2_pcb_sim_and_export_tools(sample_parts_db: Path, tmp_path: Path) -> None:
+    mock_bridge = MagicMock(spec=FritzingBridgeClient)
+    mock_bridge.call.return_value = {"ok": True}
+    catalog = PartsCatalog(sample_parts_db)
+    mcp_server.configure_dependencies(bridge=mock_bridge, catalog=catalog)
+
+    fzz_path = str(tmp_path / "demo.fzz")
+    mcp_server.open_sketch(fzz_path)
+    mock_bridge.call.assert_called_with("sketch.open", {"filePath": fzz_path})
+
+    mcp_server.save_sketch(fzz_path)
+    mock_bridge.call.assert_called_with("sketch.save", {"filePath": fzz_path})
+
+    mcp_server.get_pcb_board_info()
+    mock_bridge.call.assert_called_with("pcb.get_board_info")
+
+    mcp_server.resize_pcb_board(80.0, 50.0)
+    mock_bridge.call.assert_called_with(
+        "pcb.resize_board", {"widthMm": 80.0, "heightMm": 50.0}
+    )
+
+    mcp_server.resize_pcb_board(100.0, 60.0, board="PCB1")
+    mock_bridge.call.assert_called_with(
+        "pcb.resize_board", {"widthMm": 100.0, "heightMm": 60.0, "board": "PCB1"}
+    )
+
+    mcp_server.set_pcb_layers(2)
+    mock_bridge.call.assert_called_with("pcb.set_layers", {"layers": 2})
+
+    mcp_server.run_design_rules_check()
+    mock_bridge.call.assert_called_with("pcb.run_drc")
+
+    mcp_server.set_pcb_copper_fill("ground")
+    mock_bridge.call.assert_called_with("pcb.copper_fill", {"mode": "ground"})
+
+    mcp_server.get_spice_netlist()
+    mock_bridge.call.assert_called_with("sim.get_spice_netlist")
+
+    mcp_server.control_simulation("status")
+    mock_bridge.call.assert_called_with("sim.control", {"action": "status"})
+
+    mcp_server.export_bom_csv()
+    mock_bridge.call.assert_called_with("export.bom", {})
+
+    bom_path = str(tmp_path / "bom.csv")
+    mcp_server.export_bom_csv(bom_path)
+    mock_bridge.call.assert_called_with("export.bom", {"outputPath": bom_path})
+
+    gerber_dir = str(tmp_path / "gerber")
+    mcp_server.export_gerber(gerber_dir)
+    mock_bridge.call.assert_called_with("export.gerber", {"outputDir": gerber_dir})
+
+    mcp_server.export_gerber(gerber_dir, prefix="rev1")
+    mock_bridge.call.assert_called_with(
+        "export.gerber", {"outputDir": gerber_dir, "prefix": "rev1"}
+    )

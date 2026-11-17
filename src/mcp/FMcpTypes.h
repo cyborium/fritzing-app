@@ -60,6 +60,17 @@ struct FMcpRenderSpec {
 	bool cropToItems = true;
 };
 
+struct FMcpBoardResizeSpec {
+	QString boardRef;
+	double widthMm = 0.0;
+	double heightMm = 0.0;
+};
+
+struct FMcpGerberSpec {
+	QString outputDir;
+	QString prefix;
+};
+
 namespace FMcpResult {
 
 inline QJsonObject ok(const QJsonObject &data = QJsonObject()) {
