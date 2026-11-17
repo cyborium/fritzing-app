@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import base64
 from pathlib import Path
+import tempfile
 from typing import Any
 
 from mcp.server.mcpserver import Image, MCPServer
 
 from .catalog import DEFAULT_DB_PATH, PartsCatalog
 from .client import BridgeError, FritzingBridgeClient
+from .part_generator import build_fzpz_archive, validate_custom_part_spec
 
 mcp = MCPServer("fritzing-mcp")
 
@@ -281,6 +283,125 @@ def export_gerber(output_dir: str, prefix: str = "") -> dict[str, Any]:
     if prefix.strip():
         params["prefix"] = prefix.strip()
     return _bridge.call("export.gerber", params)
+
+
+@mcp.tool()
+def autoroute_pcb(max_cycles: int = 16) -> dict[str, Any]:
+    """Run the PCB MazeRouter autorouter synchronously and return routing statistics."""
+    return _bridge.call("pcb.autoroute", {"maxCycles": max_cycles})
+
+
+@mcp.tool()
+def clear_pcb_traces() -> dict[str, Any]:
+    """Rip up all routed PCB copper traces and reset connections back to ratsnest lines."""
+    return _bridge.call("pcb.clear_traces")
+
+
+@mcp.tool()
+def set_pcb_trace_style(
+    wire_id: int,
+    width_mils: float = 24.0,
+    layer: str = "",
+) -> dict[str, Any]:
+    """Change the width (4-250 mils) or copper layer ('top' or 'bottom') of a PCB trace."""
+    params: dict[str, Any] = {"wireId": wire_id, "widthMils": width_mils}
+    if layer.strip():
+        params["layer"] = layer.strip().lower()
+    return _bridge.call("pcb.set_trace_style", params)
+
+
+@mcp.tool()
+def import_fzpz_part(file_path: str, add_to_bin: bool = True) -> dict[str, Any]:
+    """Validate and import a bundled Fritzing part (.fzpz) into the active session."""
+    return _bridge.call(
+        "parts.import_fzpz",
+        {"filePath": str(Path(file_path.strip())), "addToBin": add_to_bin},
+    )
+
+
+@mcp.tool()
+def generate_custom_part(
+    title: str,
+    pins: list[str],
+    package: str = "dip",
+    output_path: str = "",
+    import_immediately: bool = True,
+) -> dict[str, Any]:
+    """Generate a complete .fzpz custom part from a title and pin list, and optionally import it."""
+    spec = validate_custom_part_spec(title=title, pins=pins, package=package)
+    if output_path.strip():
+        target = Path(output_path.strip())
+    else:
+        target = Path(tempfile.gettempdir()) / f"{spec.base_name}.fzpz"
+    result = build_fzpz_archive(spec, target)
+    if import_immediately and _bridge.is_online():
+        imported = import_fzpz_part(str(target), add_to_bin=True)
+        result["importedPart"] = imported
+    return result
+
+
+@mcp.tool()
+def clear_sketch() -> dict[str, Any]:
+    """Remove all deletable parts, wires, and notes from the current sketch."""
+    return _bridge.call("sketch.clear")
+
+
+@mcp.tool()
+def add_sketch_note(
+    text: str,
+    x: float = 0.0,
+    y: float = 0.0,
+    view: str = "",
+) -> dict[str, Any]:
+    """Add a documentation text note at scene coordinates (x, y) in the sketch."""
+    params: dict[str, Any] = {"text": text, "x": x, "y": y}
+    if view.strip():
+        params["view"] = view.strip().lower()
+    return _bridge.call("sketch.add_note", params)
+
+
+@mcp.tool()
+def add_power_symbol(
+    symbol_type: str = "gnd",
+    voltage: str = "5V",
+    x: float = 0.0,
+    y: float = 0.0,
+) -> dict[str, Any]:
+    """Place a schematic power/ground/net symbol ('gnd', 'vcc', or 'netlabel') at (x, y)."""
+    return _bridge.call(
+        "sketch.add_power_symbol",
+        {
+            "symbolType": symbol_type.strip().lower(),
+            "voltage": voltage.strip(),
+            "x": x,
+            "y": y,
+        },
+    )
+
+
+@mcp.tool()
+def export_view_svg(output_path: str, view: str = "") -> dict[str, Any]:
+    """Export the active or specified view as a scalable vector SVG file."""
+    params: dict[str, Any] = {"outputPath": str(Path(output_path.strip()))}
+    if view.strip():
+        params["view"] = view.strip().lower()
+    return _bridge.call("export.svg", params)
+
+
+@mcp.tool()
+def export_view_pdf(
+    output_path: str,
+    view: str = "",
+    remove_background: bool = True,
+) -> dict[str, Any]:
+    """Export the active or specified view as a high-resolution vector PDF file."""
+    params: dict[str, Any] = {
+        "outputPath": str(Path(output_path.strip())),
+        "removeBackground": remove_background,
+    }
+    if view.strip():
+        params["view"] = view.strip().lower()
+    return _bridge.call("export.pdf", params)
 
 
 def main() -> None:  # pragma: no cover

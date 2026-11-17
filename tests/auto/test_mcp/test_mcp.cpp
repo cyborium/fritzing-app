@@ -126,6 +126,42 @@ public:
 		lastCall = QStringLiteral("exportGerber:%1:%2").arg(spec.outputDir, spec.prefix);
 		return nextResponse;
 	}
+	QJsonObject autoroutePcb(int maxCycles) override {
+		lastCall = QStringLiteral("autoroutePcb:%1").arg(maxCycles);
+		return nextResponse;
+	}
+	QJsonObject clearPcbTraces() override {
+		lastCall = QStringLiteral("clearPcbTraces");
+		return nextResponse;
+	}
+	QJsonObject setPcbTraceStyle(const FMcpTraceStyleSpec &spec) override {
+		lastCall = QStringLiteral("setPcbTraceStyle:%1:%2:%3").arg(spec.wireId).arg(spec.widthMils).arg(spec.layer);
+		return nextResponse;
+	}
+	QJsonObject importFzpz(const QString &filePath, bool addToBin) override {
+		lastCall = QStringLiteral("importFzpz:%1:%2").arg(filePath).arg(addToBin);
+		return nextResponse;
+	}
+	QJsonObject clearSketch() override {
+		lastCall = QStringLiteral("clearSketch");
+		return nextResponse;
+	}
+	QJsonObject addSketchNote(const FMcpNoteSpec &spec) override {
+		lastCall = QStringLiteral("addSketchNote:%1:%2").arg(spec.text, spec.viewName);
+		return nextResponse;
+	}
+	QJsonObject addPowerSymbol(const FMcpPowerSymbolSpec &spec) override {
+		lastCall = QStringLiteral("addPowerSymbol:%1:%2").arg(spec.symbolType, spec.voltage);
+		return nextResponse;
+	}
+	QJsonObject exportViewSvg(const FMcpVectorExportSpec &spec) override {
+		lastCall = QStringLiteral("exportViewSvg:%1:%2").arg(spec.outputPath, spec.viewName);
+		return nextResponse;
+	}
+	QJsonObject exportViewPdf(const FMcpVectorExportSpec &spec) override {
+		lastCall = QStringLiteral("exportViewPdf:%1:%2").arg(spec.outputPath, spec.viewName);
+		return nextResponse;
+	}
 };
 
 class TestMcp : public QObject {
@@ -140,10 +176,13 @@ private Q_SLOTS:
 	void testValidatorSearchAndPartSpecs();
 	void testValidatorWireAndRenderSpecs();
 	void testValidatorStage2Specs();
+	void testValidatorStage3Specs();
 	void testRouterDispatchAllMethods();
 	void testRouterDispatchStage2Methods();
+	void testRouterDispatchStage3Methods();
 	void testRouterValidationAndErrorPaths();
 	void testRouterStage2ValidationErrors();
+	void testRouterStage3ValidationErrors();
 	void testServerHttpRouting();
 	void testServerLiveTcpSocket();
 };
@@ -404,10 +443,49 @@ void TestMcp::testValidatorStage2Specs() {
 	QVERIFY(FMcpValidator::validateGerberParams({{QStringLiteral("outputDir"), QStringLiteral("/tmp/gerber")}, {QStringLiteral("prefix"), QStringLiteral("board")}}, gSpec, err));
 }
 
+void TestMcp::testValidatorStage3Specs() {
+	QString err;
+	int cycles = 0;
+	QVERIFY(FMcpValidator::validateAutorouteParams(QJsonObject(), cycles, err));
+	QCOMPARE(cycles, 16);
+	QVERIFY(!FMcpValidator::validateAutorouteParams({{QStringLiteral("maxCycles"), QStringLiteral("bad")}}, cycles, err));
+	QVERIFY(!FMcpValidator::validateAutorouteParams({{QStringLiteral("maxCycles"), 0}}, cycles, err));
+	QVERIFY(!FMcpValidator::validateAutorouteParams({{QStringLiteral("maxCycles"), 500}}, cycles, err));
+	QVERIFY(FMcpValidator::validateAutorouteParams({{QStringLiteral("maxCycles"), 32}}, cycles, err));
+	QCOMPARE(cycles, 32);
+
+	FMcpTraceStyleSpec tSpec;
+	QVERIFY(!FMcpValidator::validateTraceStyleParams(QJsonObject(), tSpec, err));
+	QVERIFY(!FMcpValidator::validateTraceStyleParams({{QStringLiteral("wireId"), 10}, {QStringLiteral("widthMils"), 1.0}}, tSpec, err));
+	QVERIFY(!FMcpValidator::validateTraceStyleParams({{QStringLiteral("wireId"), 10}, {QStringLiteral("layer"), QStringLiteral("inner")}}, tSpec, err));
+	QVERIFY(FMcpValidator::validateTraceStyleParams({{QStringLiteral("wireId"), 10}, {QStringLiteral("widthMils"), 32.0}, {QStringLiteral("layer"), QStringLiteral("top")}}, tSpec, err));
+
+	QString fzpzPath;
+	bool addToBin = false;
+	QVERIFY(!FMcpValidator::validateFzpzImportParams(QJsonObject(), fzpzPath, addToBin, err));
+	QVERIFY(!FMcpValidator::validateFzpzImportParams({{QStringLiteral("filePath"), QStringLiteral("bad.zip")}}, fzpzPath, addToBin, err));
+	QVERIFY(FMcpValidator::validateFzpzImportParams({{QStringLiteral("filePath"), QStringLiteral("custom.fzpz")}, {QStringLiteral("addToBin"), false}}, fzpzPath, addToBin, err));
+	QVERIFY(!addToBin);
+
+	FMcpNoteSpec nSpec;
+	QVERIFY(!FMcpValidator::validateNoteParams(QJsonObject(), nSpec, err));
+	QVERIFY(FMcpValidator::validateNoteParams({{QStringLiteral("text"), QStringLiteral("Hello")}, {QStringLiteral("view"), QStringLiteral("schematic")}}, nSpec, err));
+
+	FMcpPowerSymbolSpec pSpec;
+	QVERIFY(FMcpValidator::validatePowerSymbolParams(QJsonObject(), pSpec, err));
+	QVERIFY(!FMcpValidator::validatePowerSymbolParams({{QStringLiteral("symbolType"), QStringLiteral("bad")}}, pSpec, err));
+	QVERIFY(FMcpValidator::validatePowerSymbolParams({{QStringLiteral("symbolType"), QStringLiteral("vcc")}, {QStringLiteral("voltage"), QStringLiteral("3.3V")}}, pSpec, err));
+
+	FMcpVectorExportSpec vSpec;
+	QVERIFY(!FMcpValidator::validateVectorExportParams(QJsonObject(), QStringLiteral(".svg"), vSpec, err));
+	QVERIFY(!FMcpValidator::validateVectorExportParams({{QStringLiteral("outputPath"), QStringLiteral("out.png")}}, QStringLiteral(".svg"), vSpec, err));
+	QVERIFY(FMcpValidator::validateVectorExportParams({{QStringLiteral("outputPath"), QStringLiteral("out.svg")}, {QStringLiteral("view"), QStringLiteral("pcb")}}, QStringLiteral(".svg"), vSpec, err));
+}
+
 void TestMcp::testRouterDispatchAllMethods() {
 	FakeWorkspace ws;
 	FMcpCommandRouter router(&ws);
-	QCOMPARE(router.registeredMethods().size(), 26);
+	QCOMPARE(router.registeredMethods().size(), 35);
 
 	QVERIFY(router.dispatch(QStringLiteral("sketch.get_state"), {{QStringLiteral("view"), QStringLiteral("pcb")}}).value(QStringLiteral("ok")).toBool());
 	QCOMPARE(ws.lastCall, QStringLiteral("getSketchState:pcb"));
@@ -493,6 +571,38 @@ void TestMcp::testRouterDispatchStage2Methods() {
 	QCOMPARE(ws.lastCall, QStringLiteral("exportGerber:gerber_out:v1"));
 }
 
+void TestMcp::testRouterDispatchStage3Methods() {
+	FakeWorkspace ws;
+	FMcpCommandRouter router(&ws);
+
+	QVERIFY(router.dispatch(QStringLiteral("pcb.autoroute"), {{QStringLiteral("maxCycles"), 20}}).value(QStringLiteral("ok")).toBool());
+	QCOMPARE(ws.lastCall, QStringLiteral("autoroutePcb:20"));
+
+	QVERIFY(router.dispatch(QStringLiteral("pcb.clear_traces"), QJsonObject()).value(QStringLiteral("ok")).toBool());
+	QCOMPARE(ws.lastCall, QStringLiteral("clearPcbTraces"));
+
+	QVERIFY(router.dispatch(QStringLiteral("pcb.set_trace_style"), {{QStringLiteral("wireId"), 55}, {QStringLiteral("widthMils"), 32.0}, {QStringLiteral("layer"), QStringLiteral("bottom")}}).value(QStringLiteral("ok")).toBool());
+	QCOMPARE(ws.lastCall, QStringLiteral("setPcbTraceStyle:55:32:bottom"));
+
+	QVERIFY(router.dispatch(QStringLiteral("parts.import_fzpz"), {{QStringLiteral("filePath"), QStringLiteral("ic.fzpz")}, {QStringLiteral("addToBin"), true}}).value(QStringLiteral("ok")).toBool());
+	QCOMPARE(ws.lastCall, QStringLiteral("importFzpz:ic.fzpz:1"));
+
+	QVERIFY(router.dispatch(QStringLiteral("sketch.clear"), QJsonObject()).value(QStringLiteral("ok")).toBool());
+	QCOMPARE(ws.lastCall, QStringLiteral("clearSketch"));
+
+	QVERIFY(router.dispatch(QStringLiteral("sketch.add_note"), {{QStringLiteral("text"), QStringLiteral("Note1")}, {QStringLiteral("view"), QStringLiteral("breadboard")}}).value(QStringLiteral("ok")).toBool());
+	QCOMPARE(ws.lastCall, QStringLiteral("addSketchNote:Note1:breadboard"));
+
+	QVERIFY(router.dispatch(QStringLiteral("sketch.add_power_symbol"), {{QStringLiteral("symbolType"), QStringLiteral("vcc")}, {QStringLiteral("voltage"), QStringLiteral("5V")}}).value(QStringLiteral("ok")).toBool());
+	QCOMPARE(ws.lastCall, QStringLiteral("addPowerSymbol:vcc:5V"));
+
+	QVERIFY(router.dispatch(QStringLiteral("export.svg"), {{QStringLiteral("outputPath"), QStringLiteral("out.svg")}, {QStringLiteral("view"), QStringLiteral("schematic")}}).value(QStringLiteral("ok")).toBool());
+	QCOMPARE(ws.lastCall, QStringLiteral("exportViewSvg:out.svg:schematic"));
+
+	QVERIFY(router.dispatch(QStringLiteral("export.pdf"), {{QStringLiteral("outputPath"), QStringLiteral("out.pdf")}, {QStringLiteral("view"), QStringLiteral("pcb")}}).value(QStringLiteral("ok")).toBool());
+	QCOMPARE(ws.lastCall, QStringLiteral("exportViewPdf:out.pdf:pcb"));
+}
+
 void TestMcp::testRouterValidationAndErrorPaths() {
 	FMcpCommandRouter nullRouter(nullptr);
 	QCOMPARE(nullRouter.dispatch(QStringLiteral("sketch.undo"), QJsonObject()).value(QStringLiteral("code")).toString(), QStringLiteral("WORKSPACE_UNAVAILABLE"));
@@ -528,6 +638,19 @@ void TestMcp::testRouterStage2ValidationErrors() {
 	QVERIFY(!router.dispatch(QStringLiteral("sim.control"), {{QStringLiteral("action"), QStringLiteral("bad")}}).value(QStringLiteral("ok")).toBool());
 	QVERIFY(!router.dispatch(QStringLiteral("export.bom"), {{QStringLiteral("outputPath"), 123}}).value(QStringLiteral("ok")).toBool());
 	QVERIFY(!router.dispatch(QStringLiteral("export.gerber"), QJsonObject()).value(QStringLiteral("ok")).toBool());
+}
+
+void TestMcp::testRouterStage3ValidationErrors() {
+	FakeWorkspace ws;
+	FMcpCommandRouter router(&ws);
+
+	QVERIFY(!router.dispatch(QStringLiteral("pcb.autoroute"), {{QStringLiteral("maxCycles"), -5}}).value(QStringLiteral("ok")).toBool());
+	QVERIFY(!router.dispatch(QStringLiteral("pcb.set_trace_style"), QJsonObject()).value(QStringLiteral("ok")).toBool());
+	QVERIFY(!router.dispatch(QStringLiteral("parts.import_fzpz"), QJsonObject()).value(QStringLiteral("ok")).toBool());
+	QVERIFY(!router.dispatch(QStringLiteral("sketch.add_note"), QJsonObject()).value(QStringLiteral("ok")).toBool());
+	QVERIFY(!router.dispatch(QStringLiteral("sketch.add_power_symbol"), {{QStringLiteral("symbolType"), QStringLiteral("invalid")}}).value(QStringLiteral("ok")).toBool());
+	QVERIFY(!router.dispatch(QStringLiteral("export.svg"), {{QStringLiteral("outputPath"), QStringLiteral("bad.pdf")}}).value(QStringLiteral("ok")).toBool());
+	QVERIFY(!router.dispatch(QStringLiteral("export.pdf"), {{QStringLiteral("outputPath"), QStringLiteral("bad.svg")}}).value(QStringLiteral("ok")).toBool());
 }
 
 void TestMcp::testServerHttpRouting() {

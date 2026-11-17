@@ -299,3 +299,102 @@ bool FMcpValidator::validateGerberParams(const QJsonObject &params, FMcpGerberSp
 	}
 	return optionalString(params, QStringLiteral("prefix"), QString(), spec.prefix, err);
 }
+
+bool FMcpValidator::validateAutorouteParams(const QJsonObject &params, int &maxCycles, QString &err) {
+	maxCycles = 16;
+	if (!params.contains(QStringLiteral("maxCycles")) || params.value(QStringLiteral("maxCycles")).isNull()) {
+		return true;
+	}
+	if (!params.value(QStringLiteral("maxCycles")).isDouble()) {
+		err = QStringLiteral("Parameter 'maxCycles' must be an integer");
+		return false;
+	}
+	int parsed = params.value(QStringLiteral("maxCycles")).toInt(-1);
+	if (parsed < 1 || parsed > MaxAutorouteCycles) {
+		err = QStringLiteral("Parameter 'maxCycles' must be between 1 and %1").arg(MaxAutorouteCycles);
+		return false;
+	}
+	maxCycles = parsed;
+	return true;
+}
+
+bool FMcpValidator::validateTraceStyleParams(const QJsonObject &params, FMcpTraceStyleSpec &spec, QString &err) {
+	if (!validateWireDeleteParams(params, spec.wireId, err)) {
+		return false;
+	}
+	if (!optionalFiniteCoord(params, QStringLiteral("widthMils"), 24.0, spec.widthMils, err)) {
+		return false;
+	}
+	if (spec.widthMils < MinTraceWidthMils || spec.widthMils > MaxTraceWidthMils) {
+		err = QStringLiteral("Parameter 'widthMils' must be between %1 and %2").arg(MinTraceWidthMils).arg(MaxTraceWidthMils);
+		return false;
+	}
+	QString rawLayer;
+	if (!optionalString(params, QStringLiteral("layer"), QString(), rawLayer, err)) {
+		return false;
+	}
+	spec.layer = rawLayer.toLower();
+	if (!spec.layer.isEmpty() && spec.layer != QStringLiteral("top") && spec.layer != QStringLiteral("bottom")) {
+		err = QStringLiteral("Invalid layer '%1' (expected 'top', 'bottom', or empty)").arg(rawLayer);
+		return false;
+	}
+	return true;
+}
+
+bool FMcpValidator::validateFzpzImportParams(const QJsonObject &params, QString &filePath, bool &addToBin, QString &err) {
+	if (!requireNonEmptyString(params, QStringLiteral("filePath"), filePath, err)) {
+		return false;
+	}
+	if (!filePath.toLower().endsWith(QStringLiteral(".fzpz"))) {
+		err = QStringLiteral("Part file path must end with '.fzpz'");
+		return false;
+	}
+	addToBin = params.value(QStringLiteral("addToBin")).toBool(true);
+	return true;
+}
+
+bool FMcpValidator::validateNoteParams(const QJsonObject &params, FMcpNoteSpec &spec, QString &err) {
+	if (!requireNonEmptyString(params, QStringLiteral("text"), spec.text, err) ||
+		!optionalFiniteCoord(params, QStringLiteral("x"), 0.0, spec.x, err) ||
+		!optionalFiniteCoord(params, QStringLiteral("y"), 0.0, spec.y, err)) {
+		return false;
+	}
+	QString rawView;
+	if (!optionalString(params, QStringLiteral("view"), QString(), rawView, err)) {
+		return false;
+	}
+	return validateViewName(rawView, true, spec.viewName, err);
+}
+
+bool FMcpValidator::validatePowerSymbolParams(const QJsonObject &params, FMcpPowerSymbolSpec &spec, QString &err) {
+	QString rawType;
+	if (!optionalString(params, QStringLiteral("symbolType"), QStringLiteral("gnd"), rawType, err) ||
+		!optionalString(params, QStringLiteral("voltage"), QStringLiteral("5V"), spec.voltage, err) ||
+		!optionalFiniteCoord(params, QStringLiteral("x"), 0.0, spec.x, err) ||
+		!optionalFiniteCoord(params, QStringLiteral("y"), 0.0, spec.y, err)) {
+		return false;
+	}
+	spec.symbolType = rawType.toLower();
+	if (spec.symbolType != QStringLiteral("gnd") && spec.symbolType != QStringLiteral("vcc") && spec.symbolType != QStringLiteral("netlabel")) {
+		err = QStringLiteral("Invalid symbolType '%1' (expected 'gnd', 'vcc', or 'netlabel')").arg(rawType);
+		return false;
+	}
+	return true;
+}
+
+bool FMcpValidator::validateVectorExportParams(const QJsonObject &params, const QString &expectedExt, FMcpVectorExportSpec &spec, QString &err) {
+	if (!requireNonEmptyString(params, QStringLiteral("outputPath"), spec.outputPath, err)) {
+		return false;
+	}
+	if (!spec.outputPath.toLower().endsWith(expectedExt.toLower())) {
+		err = QStringLiteral("Output path must end with '%1'").arg(expectedExt);
+		return false;
+	}
+	QString rawView;
+	if (!optionalString(params, QStringLiteral("view"), QString(), rawView, err) ||
+		!validateViewName(rawView, true, spec.viewName, err)) {
+		return false;
+	}
+	spec.removeBackground = params.value(QStringLiteral("removeBackground")).toBool(true);
+	return true;
+}

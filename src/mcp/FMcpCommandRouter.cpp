@@ -20,6 +20,7 @@ FMcpCommandRouter::FMcpCommandRouter(IFritzingWorkspace *workspace)
 	: m_workspace(workspace) {
 	registerHandlers();
 	registerStage2Handlers();
+	registerStage3Handlers();
 }
 
 void FMcpCommandRouter::registerHandlers() {
@@ -58,6 +59,21 @@ void FMcpCommandRouter::registerStage2Handlers() {
 
 	m_handlers.insert(QStringLiteral("export.bom"), [this](const QJsonObject &p) { return handleExportBomCsv(p); });
 	m_handlers.insert(QStringLiteral("export.gerber"), [this](const QJsonObject &p) { return handleExportGerber(p); });
+}
+
+void FMcpCommandRouter::registerStage3Handlers() {
+	m_handlers.insert(QStringLiteral("pcb.autoroute"), [this](const QJsonObject &p) { return handleAutoroutePcb(p); });
+	m_handlers.insert(QStringLiteral("pcb.clear_traces"), [this](const QJsonObject &p) { return handleClearPcbTraces(p); });
+	m_handlers.insert(QStringLiteral("pcb.set_trace_style"), [this](const QJsonObject &p) { return handleSetPcbTraceStyle(p); });
+
+	m_handlers.insert(QStringLiteral("parts.import_fzpz"), [this](const QJsonObject &p) { return handleImportFzpz(p); });
+
+	m_handlers.insert(QStringLiteral("sketch.clear"), [this](const QJsonObject &p) { return handleClearSketch(p); });
+	m_handlers.insert(QStringLiteral("sketch.add_note"), [this](const QJsonObject &p) { return handleAddSketchNote(p); });
+	m_handlers.insert(QStringLiteral("sketch.add_power_symbol"), [this](const QJsonObject &p) { return handleAddPowerSymbol(p); });
+
+	m_handlers.insert(QStringLiteral("export.svg"), [this](const QJsonObject &p) { return handleExportViewSvg(p); });
+	m_handlers.insert(QStringLiteral("export.pdf"), [this](const QJsonObject &p) { return handleExportViewPdf(p); });
 }
 
 QStringList FMcpCommandRouter::registeredMethods() const {
@@ -304,4 +320,78 @@ QJsonObject FMcpCommandRouter::handleExportGerber(const QJsonObject &params) con
 		return FMcpResult::fail(err);
 	}
 	return m_workspace->exportGerber(spec);
+}
+
+QJsonObject FMcpCommandRouter::handleAutoroutePcb(const QJsonObject &params) const {
+	int maxCycles = 16;
+	QString err;
+	if (!FMcpValidator::validateAutorouteParams(params, maxCycles, err)) {
+		return FMcpResult::fail(err);
+	}
+	return m_workspace->autoroutePcb(maxCycles);
+}
+
+QJsonObject FMcpCommandRouter::handleClearPcbTraces(const QJsonObject &params) const {
+	Q_UNUSED(params);
+	return m_workspace->clearPcbTraces();
+}
+
+QJsonObject FMcpCommandRouter::handleSetPcbTraceStyle(const QJsonObject &params) const {
+	FMcpTraceStyleSpec spec;
+	QString err;
+	if (!FMcpValidator::validateTraceStyleParams(params, spec, err)) {
+		return FMcpResult::fail(err);
+	}
+	return m_workspace->setPcbTraceStyle(spec);
+}
+
+QJsonObject FMcpCommandRouter::handleImportFzpz(const QJsonObject &params) const {
+	QString filePath;
+	bool addToBin = true;
+	QString err;
+	if (!FMcpValidator::validateFzpzImportParams(params, filePath, addToBin, err)) {
+		return FMcpResult::fail(err);
+	}
+	return m_workspace->importFzpz(filePath, addToBin);
+}
+
+QJsonObject FMcpCommandRouter::handleClearSketch(const QJsonObject &params) const {
+	Q_UNUSED(params);
+	return m_workspace->clearSketch();
+}
+
+QJsonObject FMcpCommandRouter::handleAddSketchNote(const QJsonObject &params) const {
+	FMcpNoteSpec spec;
+	QString err;
+	if (!FMcpValidator::validateNoteParams(params, spec, err)) {
+		return FMcpResult::fail(err);
+	}
+	return m_workspace->addSketchNote(spec);
+}
+
+QJsonObject FMcpCommandRouter::handleAddPowerSymbol(const QJsonObject &params) const {
+	FMcpPowerSymbolSpec spec;
+	QString err;
+	if (!FMcpValidator::validatePowerSymbolParams(params, spec, err)) {
+		return FMcpResult::fail(err);
+	}
+	return m_workspace->addPowerSymbol(spec);
+}
+
+QJsonObject FMcpCommandRouter::handleExportViewSvg(const QJsonObject &params) const {
+	FMcpVectorExportSpec spec;
+	QString err;
+	if (!FMcpValidator::validateVectorExportParams(params, QStringLiteral(".svg"), spec, err)) {
+		return FMcpResult::fail(err);
+	}
+	return m_workspace->exportViewSvg(spec);
+}
+
+QJsonObject FMcpCommandRouter::handleExportViewPdf(const QJsonObject &params) const {
+	FMcpVectorExportSpec spec;
+	QString err;
+	if (!FMcpValidator::validateVectorExportParams(params, QStringLiteral(".pdf"), spec, err)) {
+		return FMcpResult::fail(err);
+	}
+	return m_workspace->exportViewPdf(spec);
 }

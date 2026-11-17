@@ -52,6 +52,19 @@ public:
 
 	virtual QJsonObject exportBomCsv(const QString &outputPath) = 0;
 	virtual QJsonObject exportGerber(const FMcpGerberSpec &spec) = 0;
+
+	virtual QJsonObject autoroutePcb(int maxCycles) = 0;
+	virtual QJsonObject clearPcbTraces() = 0;
+	virtual QJsonObject setPcbTraceStyle(const FMcpTraceStyleSpec &spec) = 0;
+
+	virtual QJsonObject importFzpz(const QString &filePath, bool addToBin) = 0;
+
+	virtual QJsonObject clearSketch() = 0;
+	virtual QJsonObject addSketchNote(const FMcpNoteSpec &spec) = 0;
+	virtual QJsonObject addPowerSymbol(const FMcpPowerSymbolSpec &spec) = 0;
+
+	virtual QJsonObject exportViewSvg(const FMcpVectorExportSpec &spec) = 0;
+	virtual QJsonObject exportViewPdf(const FMcpVectorExportSpec &spec) = 0;
 };
 
 #endif // IFRITZINGWORKSPACE_H

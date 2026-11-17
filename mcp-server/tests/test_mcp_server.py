@@ -6,12 +6,14 @@ import base64
 from pathlib import Path
 import sqlite3
 from unittest.mock import MagicMock, patch
+import zipfile
 
 import httpx
 import pytest
 
 from fritzing_mcp.catalog import PartsCatalog
 from fritzing_mcp.client import BridgeError, FritzingBridgeClient
+from fritzing_mcp.part_generator import build_fzpz_archive, validate_custom_part_spec
 from fritzing_mcp import server as mcp_server
 
 
@@ -425,4 +427,109 @@ def test_server_stage2_pcb_sim_and_export_tools(sample_parts_db: Path, tmp_path:
     mcp_server.export_gerber(gerber_dir, prefix="rev1")
     mock_bridge.call.assert_called_with(
         "export.gerber", {"outputDir": gerber_dir, "prefix": "rev1"}
+    )
+
+
+def test_custom_part_generator_and_edge_cases(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="title"):
+        validate_custom_part_spec("   ", ["VCC", "GND"])
+    with pytest.raises(ValueError, match="package"):
+        validate_custom_part_spec("MyIC", ["VCC", "GND"], package="bga")
+    with pytest.raises(ValueError, match="between 2 and 64"):
+        validate_custom_part_spec("MyIC", ["ONLY_ONE"])
+    with pytest.raises(ValueError, match="even number"):
+        validate_custom_part_spec("MyIC", ["P1", "P2", "P3"], package="dip")
+
+    dip_spec = validate_custom_part_spec(
+        "NE555 Timer & <Sensor>",
+        ["GND", "TRIG", "OUT", "RESET", "CTRL", "THR", "DIS", "VCC"],
+        package="dip",
+    )
+    dip_out = tmp_path / "ne555.fzpz"
+    res = build_fzpz_archive(dip_spec, dip_out)
+    assert res["ok"] is True
+    assert res["pinCount"] == 8
+    assert dip_out.is_file()
+
+    with zipfile.ZipFile(dip_out, "r") as zf:
+        names = set(zf.namelist())
+        assert f"part.{dip_spec.base_name}.fzp" in names
+        assert f"svg.pcb.{dip_spec.base_name}.svg" in names
+        fzp_text = zf.read(f"part.{dip_spec.base_name}.fzp").decode("utf-8")
+        assert "&amp; &lt;Sensor&gt;" in fzp_text
+
+    hdr_spec = validate_custom_part_spec("3-Pin Sensor", ["VCC", "GND", "SIG"], package="header")
+    hdr_out = tmp_path / "hdr3.fzpz"
+    assert build_fzpz_archive(hdr_spec, hdr_out)["package"] == "header"
+
+
+def test_server_stage3_tools(sample_parts_db: Path, tmp_path: Path) -> None:
+    mock_bridge = MagicMock(spec=FritzingBridgeClient)
+    mock_bridge.is_online.return_value = True
+    mock_bridge.call.return_value = {"ok": True, "moduleID": "custom_ic"}
+    catalog = PartsCatalog(sample_parts_db)
+    mcp_server.configure_dependencies(bridge=mock_bridge, catalog=catalog)
+
+    mcp_server.autoroute_pcb(24)
+    mock_bridge.call.assert_called_with("pcb.autoroute", {"maxCycles": 24})
+
+    mcp_server.clear_pcb_traces()
+    mock_bridge.call.assert_called_with("pcb.clear_traces")
+
+    mcp_server.set_pcb_trace_style(10, 32.0, "top")
+    mock_bridge.call.assert_called_with(
+        "pcb.set_trace_style", {"wireId": 10, "widthMils": 32.0, "layer": "top"}
+    )
+
+    mcp_server.set_pcb_trace_style(10, 16.0)
+    mock_bridge.call.assert_called_with(
+        "pcb.set_trace_style", {"wireId": 10, "widthMils": 16.0}
+    )
+
+    custom_fzpz = str(tmp_path / "gen.fzpz")
+    attiny_pins = ["PB5", "PB3", "PB4", "GND", "PB0", "PB1", "PB2", "VCC"]
+    gen_res = mcp_server.generate_custom_part("ATtiny85", attiny_pins, output_path=custom_fzpz)
+    assert gen_res["ok"] is True
+    assert "importedPart" in gen_res
+
+    mock_bridge.is_online.return_value = False
+    gen_default = mcp_server.generate_custom_part("Header2", ["A", "B"], package="header")
+    assert gen_default["ok"] is True
+
+    mcp_server.clear_sketch()
+    mock_bridge.call.assert_called_with("sketch.clear")
+
+    mcp_server.add_sketch_note("Test Note", 10.0, 20.0, view="schematic")
+    mock_bridge.call.assert_called_with(
+        "sketch.add_note", {"text": "Test Note", "x": 10.0, "y": 20.0, "view": "schematic"}
+    )
+
+    mcp_server.add_sketch_note("Default View Note")
+    mock_bridge.call.assert_called_with(
+        "sketch.add_note", {"text": "Default View Note", "x": 0.0, "y": 0.0}
+    )
+
+    mcp_server.add_power_symbol("vcc", "3.3V", 50.0, 60.0)
+    mock_bridge.call.assert_called_with(
+        "sketch.add_power_symbol",
+        {"symbolType": "vcc", "voltage": "3.3V", "x": 50.0, "y": 60.0},
+    )
+
+    svg_out = str(tmp_path / "out.svg")
+    mcp_server.export_view_svg(svg_out, view="pcb")
+    mock_bridge.call.assert_called_with("export.svg", {"outputPath": svg_out, "view": "pcb"})
+
+    mcp_server.export_view_svg(svg_out)
+    mock_bridge.call.assert_called_with("export.svg", {"outputPath": svg_out})
+
+    pdf_out = str(tmp_path / "out.pdf")
+    mcp_server.export_view_pdf(pdf_out, view="schematic", remove_background=False)
+    mock_bridge.call.assert_called_with(
+        "export.pdf",
+        {"outputPath": pdf_out, "removeBackground": False, "view": "schematic"},
+    )
+
+    mcp_server.export_view_pdf(pdf_out)
+    mock_bridge.call.assert_called_with(
+        "export.pdf", {"outputPath": pdf_out, "removeBackground": True}
     )

@@ -32,6 +32,7 @@ public:
 private:
 	void registerHandlers();
 	void registerStage2Handlers();
+	void registerStage3Handlers();
 
 	QJsonObject handleGetState(const QJsonObject &params) const;
 	QJsonObject handleSetView(const QJsonObject &params) const;
@@ -65,6 +66,16 @@ private:
 
 	QJsonObject handleExportBomCsv(const QJsonObject &params) const;
 	QJsonObject handleExportGerber(const QJsonObject &params) const;
+
+	QJsonObject handleAutoroutePcb(const QJsonObject &params) const;
+	QJsonObject handleClearPcbTraces(const QJsonObject &params) const;
+	QJsonObject handleSetPcbTraceStyle(const QJsonObject &params) const;
+	QJsonObject handleImportFzpz(const QJsonObject &params) const;
+	QJsonObject handleClearSketch(const QJsonObject &params) const;
+	QJsonObject handleAddSketchNote(const QJsonObject &params) const;
+	QJsonObject handleAddPowerSymbol(const QJsonObject &params) const;
+	QJsonObject handleExportViewSvg(const QJsonObject &params) const;
+	QJsonObject handleExportViewPdf(const QJsonObject &params) const;
 
 	IFritzingWorkspace *m_workspace = nullptr;
 	QHash<QString, HandlerFunc> m_handlers;

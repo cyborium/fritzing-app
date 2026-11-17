@@ -66,6 +66,19 @@ public:
 	QJsonObject exportBomCsv(const QString &outputPath) override;
 	QJsonObject exportGerber(const FMcpGerberSpec &spec) override;
 
+	QJsonObject autoroutePcb(int maxCycles) override;
+	QJsonObject clearPcbTraces() override;
+	QJsonObject setPcbTraceStyle(const FMcpTraceStyleSpec &spec) override;
+
+	QJsonObject importFzpz(const QString &filePath, bool addToBin) override;
+
+	QJsonObject clearSketch() override;
+	QJsonObject addSketchNote(const FMcpNoteSpec &spec) override;
+	QJsonObject addPowerSymbol(const FMcpPowerSymbolSpec &spec) override;
+
+	QJsonObject exportViewSvg(const FMcpVectorExportSpec &spec) override;
+	QJsonObject exportViewPdf(const FMcpVectorExportSpec &spec) override;
+
 private:
 	MainWindow *currentMainWindow() const;
 	SketchWidget *resolveView(MainWindow *mw, const QString &viewName) const;

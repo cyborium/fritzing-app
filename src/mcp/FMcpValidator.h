@@ -20,6 +20,9 @@ public:
 	static constexpr double MaxCoordinateAbs = 100000.0;
 	static constexpr double MinBoardDimensionMm = 5.0;
 	static constexpr double MaxBoardDimensionMm = 1000.0;
+	static constexpr double MinTraceWidthMils = 4.0;
+	static constexpr double MaxTraceWidthMils = 250.0;
+	static constexpr int MaxAutorouteCycles = 100;
 	static constexpr int MaxSearchLimit = 500;
 	static constexpr int MaxRenderDimension = 8192;
 	static constexpr int MinRenderDimension = 64;
@@ -45,6 +48,13 @@ public:
 	static bool validateCopperFillMode(const QJsonObject &params, QString &mode, QString &err);
 	static bool validateSimControlAction(const QJsonObject &params, QString &action, QString &err);
 	static bool validateGerberParams(const QJsonObject &params, FMcpGerberSpec &spec, QString &err);
+
+	static bool validateAutorouteParams(const QJsonObject &params, int &maxCycles, QString &err);
+	static bool validateTraceStyleParams(const QJsonObject &params, FMcpTraceStyleSpec &spec, QString &err);
+	static bool validateFzpzImportParams(const QJsonObject &params, QString &filePath, bool &addToBin, QString &err);
+	static bool validateNoteParams(const QJsonObject &params, FMcpNoteSpec &spec, QString &err);
+	static bool validatePowerSymbolParams(const QJsonObject &params, FMcpPowerSymbolSpec &spec, QString &err);
+	static bool validateVectorExportParams(const QJsonObject &params, const QString &expectedExt, FMcpVectorExportSpec &spec, QString &err);
 };
 
 #endif // FMCPVALIDATOR_H

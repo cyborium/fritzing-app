@@ -71,6 +71,32 @@ struct FMcpGerberSpec {
 	QString prefix;
 };
 
+struct FMcpTraceStyleSpec {
+	long wireId = 0;
+	double widthMils = 24.0;
+	QString layer;
+};
+
+struct FMcpNoteSpec {
+	QString text;
+	QString viewName;
+	double x = 0.0;
+	double y = 0.0;
+};
+
+struct FMcpPowerSymbolSpec {
+	QString symbolType = QStringLiteral("gnd");
+	QString voltage = QStringLiteral("5V");
+	double x = 0.0;
+	double y = 0.0;
+};
+
+struct FMcpVectorExportSpec {
+	QString outputPath;
+	QString viewName;
+	bool removeBackground = true;
+};
+
 namespace FMcpResult {
 
 inline QJsonObject ok(const QJsonObject &data = QJsonObject()) {
