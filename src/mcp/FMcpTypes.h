@@ -73,7 +73,7 @@ struct FMcpGerberSpec {
 
 struct FMcpTraceStyleSpec {
 	long wireId = 0;
-	double widthMils = 24.0;
+	double widthMils = -1.0;
 	QString layer;
 };
 

@@ -322,10 +322,11 @@ bool FMcpValidator::validateTraceStyleParams(const QJsonObject &params, FMcpTrac
 	if (!validateWireDeleteParams(params, spec.wireId, err)) {
 		return false;
 	}
-	if (!optionalFiniteCoord(params, QStringLiteral("widthMils"), 24.0, spec.widthMils, err)) {
+	if (!optionalFiniteCoord(params, QStringLiteral("widthMils"), -1.0, spec.widthMils, err)) {
 		return false;
 	}
-	if (spec.widthMils < MinTraceWidthMils || spec.widthMils > MaxTraceWidthMils) {
+	bool hasWidth = params.contains(QStringLiteral("widthMils")) && !params.value(QStringLiteral("widthMils")).isNull();
+	if (hasWidth && (spec.widthMils < MinTraceWidthMils || spec.widthMils > MaxTraceWidthMils)) {
 		err = QStringLiteral("Parameter 'widthMils' must be between %1 and %2").arg(MinTraceWidthMils).arg(MaxTraceWidthMils);
 		return false;
 	}
@@ -336,6 +337,10 @@ bool FMcpValidator::validateTraceStyleParams(const QJsonObject &params, FMcpTrac
 	spec.layer = rawLayer.toLower();
 	if (!spec.layer.isEmpty() && spec.layer != QStringLiteral("top") && spec.layer != QStringLiteral("bottom")) {
 		err = QStringLiteral("Invalid layer '%1' (expected 'top', 'bottom', or empty)").arg(rawLayer);
+		return false;
+	}
+	if (!hasWidth && spec.layer.isEmpty()) {
+		err = QStringLiteral("Either 'widthMils' or 'layer' must be specified");
 		return false;
 	}
 	return true;

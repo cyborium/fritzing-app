@@ -1139,14 +1139,15 @@ QJsonObject FMcpWorkspaceAdapter::setPcbTraceStyle(const FMcpTraceStyleSpec &spe
 	}
 
 	auto *wire = qobject_cast<Wire *>(pcbView->findItem(spec.wireId));
-	if (!wire) {
-		return FMcpResult::fail(QStringLiteral("Trace wire %1 not found").arg(spec.wireId), QStringLiteral("NOT_FOUND"));
+	if (!wire || wire->getRatsnest() || !wire->isTraceType(pcbView->getTraceFlag())) {
+		return FMcpResult::fail(QStringLiteral("PCB trace wire %1 not found").arg(spec.wireId), QStringLiteral("NOT_FOUND"));
 	}
 
-	double newWidthPx = GraphicsUtils::mils2pixels(spec.widthMils, GraphicsUtils::SVGDPI);
 	auto *parentCmd = new QUndoCommand(QObject::tr("Update trace %1 style").arg(spec.wireId));
-	new WireWidthChangeCommand(pcbView, wire->id(), wire->wireWidth(), newWidthPx, parentCmd);
-
+	if (spec.widthMils >= 0.0) {
+		double newWidthPx = GraphicsUtils::mils2pixels(spec.widthMils, GraphicsUtils::SVGDPI);
+		new WireWidthChangeCommand(pcbView, wire->id(), wire->wireWidth(), newWidthPx, parentCmd);
+	}
 	if (!spec.layer.isEmpty() && pcbView->boardLayers() > 1) {
 		bool isTop = ViewLayer::topLayers().contains(wire->viewLayerID());
 		bool wantTop = (spec.layer == QStringLiteral("top"));
@@ -1157,7 +1158,9 @@ QJsonObject FMcpWorkspaceAdapter::setPcbTraceStyle(const FMcpTraceStyleSpec &spe
 	pcbView->undoStack()->push(parentCmd);
 
 	QJsonObject data = serializeWire(wire);
-	data[QStringLiteral("widthMils")] = spec.widthMils;
+	if (spec.widthMils >= 0.0) {
+		data[QStringLiteral("widthMils")] = spec.widthMils;
+	}
 	return FMcpResult::ok(data);
 }
 
@@ -1216,28 +1219,43 @@ QJsonObject FMcpWorkspaceAdapter::importFzpz(const QString &filePath, bool addTo
 	return getPartInfo(moduleId);
 }
 
-QJsonObject FMcpWorkspaceAdapter::clearSketch() {
-	MainWindow *mw = currentMainWindow();
-	SketchWidget *view = resolveView(mw, QStringLiteral("breadboard"));
-	if (!view) {
-		return FMcpResult::fail(QStringLiteral("No active sketch window"), QStringLiteral("NO_ACTIVE_SKETCH"));
-	}
-
+static QSet<ItemBase *> collectDeletableInView(SketchWidget *view) {
 	QSet<ItemBase *> deletable;
+	if (!view || !view->scene()) {
+		return deletable;
+	}
 	for (QGraphicsItem *gi : view->scene()->items()) {
 		auto *ib = dynamic_cast<ItemBase *>(gi);
-		if (!ib) {
-			continue;
-		}
-		ItemBase *chief = ib->layerKinChief();
+		ItemBase *chief = ib ? ib->layerKinChief() : nullptr;
 		if (chief && view->canDeleteItem(chief, 1)) {
 			deletable.insert(chief);
 		}
 	}
-	int removedCount = deletable.size();
-	for (ItemBase *part : deletable) {
-		deletePart(QString::number(part->id()));
+	return deletable;
+}
+
+QJsonObject FMcpWorkspaceAdapter::clearSketch() {
+	MainWindow *mw = currentMainWindow();
+	if (!mw) {
+		return FMcpResult::fail(QStringLiteral("No active sketch window"), QStringLiteral("NO_ACTIVE_SKETCH"));
 	}
+
+	int removedCount = 0;
+	const ViewLayer::ViewID views[] = {ViewLayer::BreadboardView, ViewLayer::SchematicView, ViewLayer::PCBView};
+	for (ViewLayer::ViewID vid : views) {
+		SketchWidget *sw = mw->sketchWidgetForView(vid);
+		const QSet<ItemBase *> deletable = collectDeletableInView(sw);
+		if (deletable.isEmpty()) {
+			continue;
+		}
+		mw->setCurrentView(vid);
+		for (ItemBase *part : deletable) {
+			if (deletePart(QString::number(part->id())).value(QStringLiteral("ok")).toBool()) {
+				removedCount++;
+			}
+		}
+	}
+	mw->setCurrentView(ViewLayer::BreadboardView);
 
 	QJsonObject data;
 	data[QStringLiteral("removedCount")] = removedCount;
@@ -1328,7 +1346,7 @@ QJsonObject FMcpWorkspaceAdapter::exportViewSvg(const FMcpVectorExportSpec &spec
 QJsonObject FMcpWorkspaceAdapter::exportViewPdf(const FMcpVectorExportSpec &spec) {
 	MainWindow *mw = currentMainWindow();
 	SketchWidget *view = resolveView(mw, spec.viewName);
-	if (!mw || !view) {
+	if (!mw || !view || !view->scene()) {
 		return FMcpResult::fail(QStringLiteral("No active sketch window"), QStringLiteral("NO_ACTIVE_SKETCH"));
 	}
 	QFileInfo fi(spec.outputPath);
@@ -1337,17 +1355,31 @@ QJsonObject FMcpWorkspaceAdapter::exportViewPdf(const FMcpVectorExportSpec &spec
 	}
 
 	QString absPath = fi.absoluteFilePath();
+	QRectF source = view->calculateVisibleItemsBoundingRect().adjusted(-20, -20, 20, 20);
 	QPrinter printer(QPrinter::HighResolution);
 	printer.setOutputFormat(QPrinter::PdfFormat);
 	printer.setOutputFileName(absPath);
+	if (!source.isEmpty()) {
+		QSizeF pageIn(source.width() / GraphicsUtils::SVGDPI, source.height() / GraphicsUtils::SVGDPI);
+		printer.setPageSize(QPageSize(pageIn.expandedTo(QSizeF(1.0, 1.0)), QPageSize::Inch));
+	}
 
-	QRectF source = view->scene()->itemsBoundingRect().adjusted(-20, -20, 20, 20);
+	QColor prevBg = view->background();
+	if (spec.removeBackground) {
+		view->setBackground(Qt::white);
+	}
 	QPainter painter;
-	if (!painter.begin(&printer)) {
+	bool started = painter.begin(&printer);
+	if (started) {
+		view->scene()->render(&painter, QRectF(), source, Qt::KeepAspectRatio);
+		painter.end();
+	}
+	if (spec.removeBackground) {
+		view->setBackground(prevBg);
+	}
+	if (!started) {
 		return FMcpResult::fail(QStringLiteral("Cannot initialize PDF writer for '%1'").arg(absPath), QStringLiteral("EXPORT_FAILED"));
 	}
-	view->scene()->render(&painter, QRectF(), source, Qt::KeepAspectRatio);
-	painter.end();
 
 	QJsonObject data;
 	data[QStringLiteral("outputPath")] = absPath;

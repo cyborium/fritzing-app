@@ -19,6 +19,11 @@ _bridge = FritzingBridgeClient()
 _catalog = PartsCatalog(DEFAULT_DB_PATH)
 
 
+def _clean_path(raw: str) -> str:
+    stripped = raw.strip()
+    return str(Path(stripped)) if stripped else ""
+
+
 def configure_dependencies(
     bridge: FritzingBridgeClient | None = None,
     catalog: PartsCatalog | None = None,
@@ -95,7 +100,7 @@ def capture_view_screenshot(
     if view.strip():
         params["view"] = view.strip().lower()
     if output_path.strip():
-        params["outputPath"] = str(Path(output_path.strip()))
+        params["outputPath"] = _clean_path(output_path)
     res = _bridge.call("sketch.render_image", params)
     b64_data = str(res.get("imageBase64", ""))
     png_bytes = base64.b64decode(b64_data)
@@ -209,13 +214,13 @@ def get_netlist() -> dict[str, Any]:
 @mcp.tool()
 def open_sketch(file_path: str) -> dict[str, Any]:
     """Open an existing Fritzing sketch (.fz or .fzz) from disk."""
-    return _bridge.call("sketch.open", {"filePath": str(Path(file_path.strip()))})
+    return _bridge.call("sketch.open", {"filePath": _clean_path(file_path)})
 
 
 @mcp.tool()
 def save_sketch(file_path: str) -> dict[str, Any]:
     """Save the active Fritzing sketch to disk (.fzz archive or .fz file)."""
-    return _bridge.call("sketch.save", {"filePath": str(Path(file_path.strip()))})
+    return _bridge.call("sketch.save", {"filePath": _clean_path(file_path)})
 
 
 @mcp.tool()
@@ -272,14 +277,14 @@ def export_bom_csv(output_path: str = "") -> dict[str, Any]:
     """Export the Bill of Materials (BOM) as structured JSON rows and optional CSV file."""
     params: dict[str, Any] = {}
     if output_path.strip():
-        params["outputPath"] = str(Path(output_path.strip()))
+        params["outputPath"] = _clean_path(output_path)
     return _bridge.call("export.bom", params)
 
 
 @mcp.tool()
 def export_gerber(output_dir: str, prefix: str = "") -> dict[str, Any]:
     """Export RS-274X Gerber and Excellon drill files for PCB manufacturing."""
-    params: dict[str, Any] = {"outputDir": str(Path(output_dir.strip()))}
+    params: dict[str, Any] = {"outputDir": _clean_path(output_dir)}
     if prefix.strip():
         params["prefix"] = prefix.strip()
     return _bridge.call("export.gerber", params)
@@ -300,11 +305,13 @@ def clear_pcb_traces() -> dict[str, Any]:
 @mcp.tool()
 def set_pcb_trace_style(
     wire_id: int,
-    width_mils: float = 24.0,
+    width_mils: float | None = None,
     layer: str = "",
 ) -> dict[str, Any]:
     """Change the width (4-250 mils) or copper layer ('top' or 'bottom') of a PCB trace."""
-    params: dict[str, Any] = {"wireId": wire_id, "widthMils": width_mils}
+    params: dict[str, Any] = {"wireId": wire_id}
+    if width_mils is not None:
+        params["widthMils"] = width_mils
     if layer.strip():
         params["layer"] = layer.strip().lower()
     return _bridge.call("pcb.set_trace_style", params)
@@ -315,7 +322,7 @@ def import_fzpz_part(file_path: str, add_to_bin: bool = True) -> dict[str, Any]:
     """Validate and import a bundled Fritzing part (.fzpz) into the active session."""
     return _bridge.call(
         "parts.import_fzpz",
-        {"filePath": str(Path(file_path.strip())), "addToBin": add_to_bin},
+        {"filePath": _clean_path(file_path), "addToBin": add_to_bin},
     )
 
 
@@ -382,7 +389,7 @@ def add_power_symbol(
 @mcp.tool()
 def export_view_svg(output_path: str, view: str = "") -> dict[str, Any]:
     """Export the active or specified view as a scalable vector SVG file."""
-    params: dict[str, Any] = {"outputPath": str(Path(output_path.strip()))}
+    params: dict[str, Any] = {"outputPath": _clean_path(output_path)}
     if view.strip():
         params["view"] = view.strip().lower()
     return _bridge.call("export.svg", params)
@@ -396,7 +403,7 @@ def export_view_pdf(
 ) -> dict[str, Any]:
     """Export the active or specified view as a high-resolution vector PDF file."""
     params: dict[str, Any] = {
-        "outputPath": str(Path(output_path.strip())),
+        "outputPath": _clean_path(output_path),
         "removeBackground": remove_background,
     }
     if view.strip():

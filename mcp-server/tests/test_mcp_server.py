@@ -486,6 +486,14 @@ def test_server_stage3_tools(sample_parts_db: Path, tmp_path: Path) -> None:
         "pcb.set_trace_style", {"wireId": 10, "widthMils": 16.0}
     )
 
+    mcp_server.set_pcb_trace_style(10, layer="bottom")
+    mock_bridge.call.assert_called_with(
+        "pcb.set_trace_style", {"wireId": 10, "layer": "bottom"}
+    )
+
+    mcp_server.open_sketch("   ")
+    mock_bridge.call.assert_called_with("sketch.open", {"filePath": ""})
+
     custom_fzpz = str(tmp_path / "gen.fzpz")
     attiny_pins = ["PB5", "PB3", "PB4", "GND", "PB0", "PB1", "PB2", "VCC"]
     gen_res = mcp_server.generate_custom_part("ATtiny85", attiny_pins, output_path=custom_fzpz)

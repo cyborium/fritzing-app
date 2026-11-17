@@ -456,9 +456,13 @@ void TestMcp::testValidatorStage3Specs() {
 
 	FMcpTraceStyleSpec tSpec;
 	QVERIFY(!FMcpValidator::validateTraceStyleParams(QJsonObject(), tSpec, err));
+	QVERIFY(!FMcpValidator::validateTraceStyleParams({{QStringLiteral("wireId"), 10}}, tSpec, err));
 	QVERIFY(!FMcpValidator::validateTraceStyleParams({{QStringLiteral("wireId"), 10}, {QStringLiteral("widthMils"), 1.0}}, tSpec, err));
 	QVERIFY(!FMcpValidator::validateTraceStyleParams({{QStringLiteral("wireId"), 10}, {QStringLiteral("layer"), QStringLiteral("inner")}}, tSpec, err));
+	QVERIFY(FMcpValidator::validateTraceStyleParams({{QStringLiteral("wireId"), 10}, {QStringLiteral("layer"), QStringLiteral("bottom")}}, tSpec, err));
+	QVERIFY(tSpec.widthMils < 0.0);
 	QVERIFY(FMcpValidator::validateTraceStyleParams({{QStringLiteral("wireId"), 10}, {QStringLiteral("widthMils"), 32.0}, {QStringLiteral("layer"), QStringLiteral("top")}}, tSpec, err));
+	QCOMPARE(tSpec.widthMils, 32.0);
 
 	QString fzpzPath;
 	bool addToBin = false;
